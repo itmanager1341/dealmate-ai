@@ -13,9 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { SearchInput } from "@/components/ui/search";
 import { ChevronDown, LogOut, User } from "lucide-react";
-import { signOut, getCurrentUser } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { User as UserType } from "@/types";
+import { User as UserType } from "@supabase/supabase-js";
 
 export function Header() {
   const location = useLocation();
@@ -27,15 +27,8 @@ export function Header() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const currentUser = await getCurrentUser();
-        if (currentUser) {
-          setUser({
-            id: currentUser.id,
-            email: currentUser.email || '',
-            avatar_url: currentUser.user_metadata?.avatar_url,
-            full_name: currentUser.user_metadata?.full_name,
-          });
-        }
+        const { data: { user } } = await supabase.auth.getUser();
+        setUser(user);
       } catch (error) {
         console.error("Error fetching user:", error);
       } finally {
@@ -48,7 +41,7 @@ export function Header() {
 
   const handleSignOut = async () => {
     try {
-      await signOut();
+      await supabase.auth.signOut();
       toast.success("Signed out successfully");
       navigate("/login");
     } catch (error) {
@@ -57,14 +50,12 @@ export function Header() {
     }
   };
 
-  const getInitials = (name?: string) => {
-    if (!name) return "U";
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .substring(0, 2);
+  const getInitials = (email?: string) => {
+    if (!email) return "U";
+    return email
+      .split("@")[0]
+      .substring(0, 2)
+      .toUpperCase();
   };
 
   const handleSearch = (e: React.FormEvent) => {
@@ -137,8 +128,8 @@ export function Header() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="relative h-8 overflow-hidden rounded-full">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={user.avatar_url} alt={user.full_name || user.email} />
-                    <AvatarFallback>{getInitials(user.full_name)}</AvatarFallback>
+                    <AvatarImage src={user.user_metadata?.avatar_url} alt={user.email || "User"} />
+                    <AvatarFallback>{getInitials(user.email)}</AvatarFallback>
                   </Avatar>
                   <ChevronDown className="ml-2 h-4 w-4 text-muted-foreground" />
                 </Button>
@@ -146,7 +137,7 @@ export function Header() {
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">{user.full_name || "User"}</p>
+                    <p className="text-sm font-medium leading-none">{user.user_metadata?.full_name || "User"}</p>
                     <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
                   </div>
                 </DropdownMenuLabel>

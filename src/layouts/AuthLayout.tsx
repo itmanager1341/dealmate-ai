@@ -1,29 +1,35 @@
 
 import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
-import { getSession } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 import { SidebarWrapper } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
+import { User, Session } from '@supabase/supabase-js';
 
 export function AuthLayout() {
   const [loading, setLoading] = useState(true);
-  const [authenticated, setAuthenticated] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const location = useLocation();
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const session = await getSession();
-        setAuthenticated(!!session);
-      } catch (error) {
-        console.error("Error checking authentication:", error);
-        setAuthenticated(false);
-      } finally {
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
         setLoading(false);
       }
-    };
+    );
 
-    checkAuth();
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   if (loading) {
@@ -37,7 +43,7 @@ export function AuthLayout() {
     );
   }
 
-  if (!authenticated) {
+  if (!user || !session) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

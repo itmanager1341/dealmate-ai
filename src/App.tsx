@@ -12,6 +12,7 @@ import DealWorkspace from "./pages/DealWorkspace";
 import Compare from "./pages/Compare";
 import Archive from "./pages/Archive";
 import Login from "./pages/Login";
+import Signup from "./pages/Signup";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -25,6 +26,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
           
           {/* Protected Routes */}
           <Route element={<AuthLayout />}>
