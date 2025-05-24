@@ -1,7 +1,6 @@
-
 // AI API Integration for DealMate Frontend
 
-const AI_SERVER_URL = import.meta.env.VITE_AI_SERVER_URL || 'https://zxjyxzhoz0d2e5-8000.proxy.runpod.net';
+const AI_SERVER_URL = 'https://zxjyxzhoz0d2e5-8000.proxy.runpod.net';
 
 export interface AIResponse {
   success: boolean;
@@ -21,16 +20,24 @@ export interface DealFile {
 // Health check for AI server
 export async function checkAIServerHealth(): Promise<boolean> {
   try {
+    console.log('Checking AI server health at:', AI_SERVER_URL);
+    
     const response = await fetch(`${AI_SERVER_URL}/health`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
       },
       mode: 'cors',
+      credentials: 'omit',
     });
+    
+    console.log('Health check response status:', response.status);
     
     if (!response.ok) {
       console.error('AI server health check failed with status:', response.status);
+      const errorText = await response.text();
+      console.error('Error response body:', errorText);
       return false;
     }
     
