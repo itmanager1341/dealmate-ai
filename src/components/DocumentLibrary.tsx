@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/lib/supabase";
 import { Document } from "@/types";
 import { toast } from "sonner";
@@ -17,9 +18,15 @@ import {
   Search,
   Eye,
   Calendar,
-  FileQuestion
+  FileQuestion,
+  Brain,
+  Loader,
+  CheckCircle,
+  XCircle,
+  Zap
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useFileProcessing } from "../hooks/useFileProcessing";
 
 interface DocumentLibraryProps {
   dealId: string;
@@ -30,10 +37,20 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
+  const [processingDocs, setProcessingDocs] = useState<Set<string>>(new Set());
+
+  const {
+    jobs,
+    isServerHealthy,
+    checkHealth,
+    processFileAsync
+  } = useFileProcessing();
 
   useEffect(() => {
     fetchDocuments();
-  }, [dealId]);
+    checkHealth();
+  }, [dealId, checkHealth]);
 
   const fetchDocuments = async () => {
     try {
@@ -103,6 +120,113 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
     }
   };
 
+  const processDocument = async (document: Document) => {
+    if (!isServerHealthy) {
+      toast.error("AI server is not available");
+      return;
+    }
+
+    setProcessingDocs(prev => new Set(prev).add(document.id));
+
+    try {
+      // Create a File object from the stored document
+      const { data: fileData, error: downloadError } = await supabase.storage
+        .from('documents')
+        .download(document.file_path);
+
+      if (downloadError) throw downloadError;
+
+      const file = new File([fileData], document.name, { 
+        type: getFileTypeFromExtension(document.file_type) 
+      });
+
+      console.log(`Starting AI processing for ${document.name}`);
+      
+      const jobId = await processFileAsync(file, dealId);
+      
+      // Wait for processing to complete
+      let attempts = 0;
+      const maxAttempts = 60;
+      let jobCompleted = false;
+      
+      while (attempts < maxAttempts && !jobCompleted) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        const currentJob = jobs.find(j => j.id === jobId);
+        
+        if (currentJob) {
+          if (currentJob.status === 'completed') {
+            // Update document as processed
+            await supabase
+              .from('documents')
+              .update({ 
+                processed: true,
+                classified_as: currentJob.result?.classification || null
+              })
+              .eq('id', document.id);
+
+            toast.success(`Successfully processed ${document.name}`);
+            fetchDocuments();
+            jobCompleted = true;
+            
+          } else if (currentJob.status === 'error') {
+            console.error(`AI processing failed for ${document.name}:`, currentJob.error);
+            toast.error(`AI processing failed: ${currentJob.error}`);
+            jobCompleted = true;
+          }
+        }
+        
+        attempts++;
+      }
+      
+      if (!jobCompleted) {
+        toast.error(`Processing timeout for ${document.name}`);
+      }
+      
+    } catch (error) {
+      console.error(`Error processing ${document.name}:`, error);
+      toast.error(`Failed to process ${document.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setProcessingDocs(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(document.id);
+        return newSet;
+      });
+    }
+  };
+
+  const processSelectedDocuments = async () => {
+    if (selectedDocs.size === 0) {
+      toast.error("Please select documents to process");
+      return;
+    }
+
+    const documentsToProcess = documents.filter(doc => 
+      selectedDocs.has(doc.id) && !doc.processed
+    );
+
+    if (documentsToProcess.length === 0) {
+      toast.error("Selected documents are already processed");
+      return;
+    }
+
+    for (const document of documentsToProcess) {
+      await processDocument(document);
+    }
+
+    setSelectedDocs(new Set());
+  };
+
+  const getFileTypeFromExtension = (fileType: string): string => {
+    switch (fileType) {
+      case 'pdf': return 'application/pdf';
+      case 'docx': return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'xlsx': return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      case 'mp3': return 'audio/mpeg';
+      default: return 'application/octet-stream';
+    }
+  };
+
   const getFileIcon = (fileType: string) => {
     switch (fileType) {
       case 'pdf':
@@ -118,17 +242,32 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
     }
   };
 
-  const getStatusBadge = (processed: boolean) => {
+  const getStatusBadge = (processed: boolean, isProcessing: boolean) => {
+    if (isProcessing) {
+      return <Badge variant="secondary"><Loader className="h-3 w-3 mr-1 animate-spin" />Processing</Badge>;
+    }
     return (
       <Badge variant={processed ? "default" : "secondary"}>
-        {processed ? "Processed" : "Processing"}
+        {processed ? "Processed" : "Ready"}
       </Badge>
     );
+  };
+
+  const toggleDocumentSelection = (docId: string) => {
+    const newSelected = new Set(selectedDocs);
+    if (newSelected.has(docId)) {
+      newSelected.delete(docId);
+    } else {
+      newSelected.add(docId);
+    }
+    setSelectedDocs(newSelected);
   };
 
   const filteredDocuments = documents.filter(doc =>
     doc.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const unprocessedCount = documents.filter(doc => !doc.processed).length;
 
   if (loading) {
     return (
@@ -149,15 +288,33 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
             Document Library ({documents.length})
+            {unprocessedCount > 0 && (
+              <Badge variant="secondary" className="ml-2">
+                {unprocessedCount} unprocessed
+              </Badge>
+            )}
           </CardTitle>
-          <div className="flex items-center gap-2 max-w-sm">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search documents..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="max-w-xs"
-            />
+          <div className="flex items-center gap-2">
+            {selectedDocs.size > 0 && (
+              <Button
+                onClick={processSelectedDocuments}
+                disabled={!isServerHealthy}
+                size="sm"
+                variant="outline"
+              >
+                <Brain className="h-4 w-4 mr-1" />
+                Process Selected ({selectedDocs.size})
+              </Button>
+            )}
+            <div className="flex items-center gap-2 max-w-sm">
+              <Search className="h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search documents..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="max-w-xs"
+              />
+            </div>
           </div>
         </div>
       </CardHeader>
@@ -179,6 +336,18 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12">
+                  <Checkbox
+                    checked={selectedDocs.size === filteredDocuments.length && filteredDocuments.length > 0}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        setSelectedDocs(new Set(filteredDocuments.map(doc => doc.id)));
+                      } else {
+                        setSelectedDocs(new Set());
+                      }
+                    }}
+                  />
+                </TableHead>
                 <TableHead>Document</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Size</TableHead>
@@ -188,60 +357,84 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredDocuments.map((document) => (
-                <TableRow key={document.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      {getFileIcon(document.file_type)}
-                      <div>
-                        <p className="font-medium">{document.name}</p>
-                        {document.classification && (
-                          <p className="text-sm text-muted-foreground">
-                            {document.classification}
-                          </p>
-                        )}
+              {filteredDocuments.map((document) => {
+                const isProcessing = processingDocs.has(document.id);
+                return (
+                  <TableRow key={document.id}>
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedDocs.has(document.id)}
+                        onCheckedChange={() => toggleDocumentSelection(document.id)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        {getFileIcon(document.file_type)}
+                        <div>
+                          <p className="font-medium">{document.name}</p>
+                          {document.classified_as && (
+                            <p className="text-sm text-muted-foreground">
+                              {document.classified_as}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="uppercase">
-                      {document.file_type}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {document.size ? `${(document.size / 1024 / 1024).toFixed(2)} MB` : 'Unknown'}
-                  </TableCell>
-                  <TableCell>
-                    {getStatusBadge(document.processed)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                      <Calendar className="h-4 w-4" />
-                      {formatDistanceToNow(new Date(document.uploaded_at), { addSuffix: true })}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDownload(document.file_path, document.name)}
-                        title="Download"
-                      >
-                        <Download className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(document.id, document.file_path)}
-                        title="Delete"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="uppercase">
+                        {document.file_type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {document.size ? `${(document.size / 1024 / 1024).toFixed(2)} MB` : 'Unknown'}
+                    </TableCell>
+                    <TableCell>
+                      {getStatusBadge(document.processed, isProcessing)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                        <Calendar className="h-4 w-4" />
+                        {formatDistanceToNow(new Date(document.uploaded_at), { addSuffix: true })}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {!document.processed && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => processDocument(document)}
+                            disabled={isProcessing || !isServerHealthy}
+                            title="Process with AI"
+                          >
+                            {isProcessing ? (
+                              <Loader className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Brain className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDownload(document.file_path, document.name)}
+                          title="Download"
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDelete(document.id, document.file_path)}
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         )}

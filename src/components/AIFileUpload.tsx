@@ -26,39 +26,29 @@ import { getProcessingMethod } from '../utils/aiApi';
 
 interface AIFileUploadProps {
   dealId: string;
-  onProcessingComplete?: (results: any[]) => void;
+  onUploadComplete?: (results: any[]) => void;
   maxFiles?: number;
   className?: string;
 }
 
 const AIFileUpload: React.FC<AIFileUploadProps> = ({
   dealId,
-  onProcessingComplete,
+  onUploadComplete,
   maxFiles = 10,
   className
 }) => {
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [serverStatus, setServerStatus] = useState<'checking' | 'healthy' | 'error'>('checking');
-  const [processingProgress, setProcessingProgress] = useState<{[key: string]: string}>({});
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{[key: string]: number}>({});
   
   const {
-    jobs,
     isServerHealthy,
-    checkHealth,
-    processFileAsync,
-    getProcessingStats
+    checkHealth
   } = useFileProcessing();
 
   // Check server health on mount
   useEffect(() => {
-    const checkServerHealth = async () => {
-      setServerStatus('checking');
-      const healthy = await checkHealth();
-      setServerStatus(healthy ? 'healthy' : 'error');
-    };
-    
-    checkServerHealth();
+    checkHealth();
   }, [checkHealth]);
 
   // File drop handler
@@ -79,151 +69,110 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
       'application/msword': ['.doc']
     },
     maxFiles: maxFiles - uploadedFiles.length,
-    disabled: isProcessing || serverStatus !== 'healthy'
+    disabled: isUploading
   });
 
-  // Save file to database after successful processing
-  const saveFileToDatabase = async (file: File, aiResult: any) => {
+  // Upload files to storage and database
+  const handleUploadFiles = async () => {
+    if (uploadedFiles.length === 0) return;
+    
+    setIsUploading(true);
+    const uploadedResults = [];
+    
     try {
+      console.log(`Starting to upload ${uploadedFiles.length} files`);
+      
+      // Get current user
       const user = await getCurrentUser();
       if (!user) {
         throw new Error("User not authenticated");
       }
 
-      const fileExt = file.name.split('.').pop()?.toLowerCase();
-      let fileType: 'pdf' | 'docx' | 'xlsx' | 'mp3' = 'pdf';
-      if (fileExt === 'docx') fileType = 'docx';
-      if (fileExt === 'xlsx') fileType = 'xlsx';
-      if (fileExt === 'mp3') fileType = 'mp3';
-
-      // Create a file path for storage (even though we're not storing in Supabase storage for now)
-      const fileName = `${user.id}/${dealId}/${uuidv4()}.${fileExt}`;
-
-      // Insert document record
-      const { data: documentData, error: dbError } = await supabase
-        .from('documents')
-        .insert({
-          deal_id: dealId,
-          name: file.name,
-          file_path: fileName,
-          file_type: fileType,
-          size: file.size,
-          processed: true, // Mark as processed since AI processing is complete
-          uploaded_by: user.id,
-          classified_as: aiResult?.classification || null
-        })
-        .select()
-        .single();
-
-      if (dbError) {
-        console.error("Database insert error:", dbError);
-        throw dbError;
-      }
-
-      console.log(`File ${file.name} saved to database with ID: ${documentData.id}`);
-      return documentData;
-    } catch (error) {
-      console.error(`Error saving file ${file.name} to database:`, error);
-      throw error;
-    }
-  };
-
-  // Process all uploaded files
-  const handleProcessFiles = async () => {
-    if (uploadedFiles.length === 0) return;
-    
-    setIsProcessing(true);
-    const processedResults = [];
-    const fileProgressKeys = uploadedFiles.map(file => file.name);
-    
-    // Initialize progress tracking
-    const initialProgress: {[key: string]: string} = {};
-    fileProgressKeys.forEach(key => {
-      initialProgress[key] = 'starting';
-    });
-    setProcessingProgress(initialProgress);
-    
-    try {
-      console.log(`Starting to process ${uploadedFiles.length} files`);
-      
-      // Process files one by one to ensure proper database saving
-      for (const file of uploadedFiles) {
+      // Upload files one by one
+      for (let i = 0; i < uploadedFiles.length; i++) {
+        const file = uploadedFiles[i];
+        const fileExt = file.name.split('.').pop()?.toLowerCase();
+        const fileName = `${user.id}/${dealId}/${uuidv4()}.${fileExt}`;
+        
+        console.log(`Uploading file ${i + 1}/${uploadedFiles.length}: ${file.name}`);
+        
+        // Update progress
+        setUploadProgress(prev => ({ ...prev, [file.name]: 0 }));
+        
         try {
-          console.log(`Processing file: ${file.name}`);
-          setProcessingProgress(prev => ({ ...prev, [file.name]: 'processing' }));
-          
-          // Process the file through AI
-          const jobId = await processFileAsync(file, dealId);
-          
-          // Wait for this specific job to complete by checking jobs array
-          let attempts = 0;
-          const maxAttempts = 60; // 60 seconds timeout
-          let jobCompleted = false;
-          
-          while (attempts < maxAttempts && !jobCompleted) {
-            // Wait a bit before checking
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            // Find the job by ID
-            const currentJob = jobs.find(j => j.id === jobId);
-            
-            if (currentJob) {
-              if (currentJob.status === 'completed') {
-                console.log(`AI processing completed for ${file.name}`);
-                setProcessingProgress(prev => ({ ...prev, [file.name]: 'saving' }));
-                
-                // Save file to database with AI results
-                const savedDocument = await saveFileToDatabase(file, currentJob.result);
-                processedResults.push({
-                  file: file.name,
-                  document: savedDocument,
-                  aiResult: currentJob.result
-                });
-                
-                setProcessingProgress(prev => ({ ...prev, [file.name]: 'completed' }));
-                toast.success(`Successfully processed ${file.name}`);
-                jobCompleted = true;
-                
-              } else if (currentJob.status === 'error') {
-                console.error(`AI processing failed for ${file.name}:`, currentJob.error);
-                setProcessingProgress(prev => ({ ...prev, [file.name]: 'error' }));
-                toast.error(`AI processing failed for ${file.name}: ${currentJob.error}`);
-                jobCompleted = true;
-              }
-            }
-            
-            attempts++;
+          // Upload to Supabase storage
+          const { error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(fileName, file);
+
+          if (uploadError) {
+            console.error("Storage upload error:", uploadError);
+            throw uploadError;
           }
-          
-          if (!jobCompleted) {
-            console.error(`Timeout waiting for ${file.name} to process`);
-            setProcessingProgress(prev => ({ ...prev, [file.name]: 'timeout' }));
-            toast.error(`Processing timeout for ${file.name}`);
+
+          // Update progress
+          setUploadProgress(prev => ({ ...prev, [file.name]: 50 }));
+
+          // Determine file type
+          let fileType: 'pdf' | 'docx' | 'xlsx' | 'mp3' = 'pdf';
+          if (fileExt === 'docx') fileType = 'docx';
+          if (fileExt === 'xlsx') fileType = 'xlsx';
+          if (fileExt === 'mp3') fileType = 'mp3';
+
+          // Save to database
+          const { data: documentData, error: dbError } = await supabase
+            .from('documents')
+            .insert({
+              deal_id: dealId,
+              name: file.name,
+              file_path: fileName,
+              file_type: fileType,
+              size: file.size,
+              processed: false, // Mark as not processed initially
+              uploaded_by: user.id,
+              classified_as: null
+            })
+            .select()
+            .single();
+
+          if (dbError) {
+            console.error("Database insert error:", dbError);
+            throw dbError;
           }
+
+          // Update progress
+          setUploadProgress(prev => ({ ...prev, [file.name]: 100 }));
+          
+          uploadedResults.push({
+            file: file.name,
+            document: documentData
+          });
+          
+          console.log(`Successfully uploaded ${file.name}`);
+          toast.success(`Uploaded ${file.name}`);
           
         } catch (error) {
-          console.error(`Error processing ${file.name}:`, error);
-          setProcessingProgress(prev => ({ ...prev, [file.name]: 'error' }));
-          toast.error(`Failed to process ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          console.error(`Error uploading ${file.name}:`, error);
+          toast.error(`Failed to upload ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
       }
       
       // Call completion callback with results
-      if (onProcessingComplete && processedResults.length > 0) {
-        onProcessingComplete(processedResults);
+      if (onUploadComplete && uploadedResults.length > 0) {
+        onUploadComplete(uploadedResults);
       }
       
       // Clear uploaded files after processing
       setUploadedFiles([]);
-      setProcessingProgress({});
+      setUploadProgress({});
       
-      toast.success(`Processing complete! ${processedResults.length} of ${uploadedFiles.length} files processed successfully.`);
+      toast.success(`Upload complete! ${uploadedResults.length} of ${uploadedFiles.length} files uploaded successfully.`);
       
     } catch (error) {
-      console.error('File processing failed:', error);
-      toast.error('File processing failed');
+      console.error('File upload failed:', error);
+      toast.error('File upload failed');
     } finally {
-      setIsProcessing(false);
+      setIsUploading(false);
     }
   };
 
@@ -253,39 +202,24 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
     }
   };
 
-  // Get progress status badge
+  // Get upload progress badge
   const getProgressBadge = (fileName: string) => {
-    const status = processingProgress[fileName];
-    switch (status) {
-      case 'starting':
-        return <Badge variant="secondary">Starting...</Badge>;
-      case 'processing':
-        return <Badge variant="secondary">Processing...</Badge>;
-      case 'saving':
-        return <Badge variant="secondary">Saving...</Badge>;
-      case 'completed':
-        return <Badge variant="default" className="bg-green-500">Completed</Badge>;
-      case 'error':
-        return <Badge variant="destructive">Error</Badge>;
-      case 'timeout':
-        return <Badge variant="destructive">Timeout</Badge>;
-      default:
-        return null;
-    }
+    const progress = uploadProgress[fileName];
+    if (progress === undefined) return null;
+    if (progress === 100) return <Badge variant="default" className="bg-green-500">Uploaded</Badge>;
+    return <Badge variant="secondary">Uploading... {progress}%</Badge>;
   };
-
-  const stats = getProcessingStats();
 
   return (
     <div className={`space-y-4 ${className}`}>
       {/* Server Status */}
-      <Alert className={serverStatus === 'healthy' ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}>
+      <Alert className={isServerHealthy ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}>
         <Zap className="h-4 w-4" />
         <AlertDescription>
           AI Server Status: {' '}
-          {serverStatus === 'checking' && <Badge variant="secondary">Checking...</Badge>}
-          {serverStatus === 'healthy' && <Badge variant="default" className="bg-green-500">Ready</Badge>}
-          {serverStatus === 'error' && <Badge variant="destructive">Offline</Badge>}
+          {isServerHealthy === null && <Badge variant="secondary">Checking...</Badge>}
+          {isServerHealthy === true && <Badge variant="default" className="bg-green-500">Ready</Badge>}
+          {isServerHealthy === false && <Badge variant="secondary">Offline (Upload still available)</Badge>}
         </AlertDescription>
       </Alert>
 
@@ -293,8 +227,8 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Brain className="h-5 w-5" />
-            AI-Powered Document Processing
+            <Upload className="h-5 w-5" />
+            Document Upload
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -303,7 +237,7 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
             className={`
               border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
               ${isDragActive ? 'border-blue-400 bg-blue-50' : 'border-gray-300'}
-              ${serverStatus !== 'healthy' ? 'opacity-50 cursor-not-allowed' : 'hover:border-gray-400'}
+              ${isUploading ? 'opacity-50 cursor-not-allowed' : 'hover:border-gray-400'}
             `}
           >
             <input {...getInputProps()} />
@@ -319,7 +253,7 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
                   Supports: Excel, PDF, Word, Audio files (MP3, WAV)
                 </p>
                 <p className="text-xs text-gray-400 mt-1">
-                  Max {maxFiles} files • AI will extract key metrics and insights
+                  Max {maxFiles} files • Files will be uploaded immediately
                 </p>
               </div>
             )}
@@ -331,7 +265,7 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
       {uploadedFiles.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Files Ready for Processing ({uploadedFiles.length})</CardTitle>
+            <CardTitle className="text-lg">Files Ready for Upload ({uploadedFiles.length})</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2 mb-4">
@@ -350,9 +284,9 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
                         </p>
                       </div>
                       <Badge className={getMethodBadgeColor(method)}>
-                        {method === 'audio' && 'Transcription'}
-                        {method === 'excel' && 'Financial Analysis'}
-                        {method === 'document' && 'Document Analysis'}
+                        {method === 'audio' && 'Audio File'}
+                        {method === 'excel' && 'Spreadsheet'}
+                        {method === 'document' && 'Document'}
                         {method === 'unknown' && 'Unknown Type'}
                       </Badge>
                       {progressBadge}
@@ -361,7 +295,7 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
                       variant="ghost"
                       size="sm"
                       onClick={() => removeFile(index)}
-                      disabled={isProcessing}
+                      disabled={isUploading}
                     >
                       <XCircle className="h-4 w-4" />
                     </Button>
@@ -371,68 +305,22 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
             </div>
             
             <Button 
-              onClick={handleProcessFiles}
-              disabled={isProcessing || serverStatus !== 'healthy'}
+              onClick={handleUploadFiles}
+              disabled={isUploading}
               className="w-full"
             >
-              {isProcessing ? (
+              {isUploading ? (
                 <>
                   <Loader className="mr-2 h-4 w-4 animate-spin" />
-                  Processing with AI...
+                  Uploading Files...
                 </>
               ) : (
                 <>
-                  <Brain className="mr-2 h-4 w-4" />
-                  Process Files with AI
+                  <Upload className="mr-2 h-4 w-4" />
+                  Upload Files to Library
                 </>
               )}
             </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Processing Status */}
-      {(jobs.length > 0 || Object.keys(processingProgress).length > 0) && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">AI Processing Status</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {/* Overall Progress */}
-              {stats.total > 0 && (
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Overall Progress</span>
-                    <span>{stats.completed}/{stats.total} completed</span>
-                  </div>
-                  <Progress value={(stats.completed / stats.total) * 100} />
-                </div>
-              )}
-
-              {/* Individual Job Status */}
-              <div className="space-y-2">
-                {jobs.slice(-5).map((job) => (
-                  <div key={job.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                    <div className="flex items-center gap-2">
-                      {getFileIcon(job.fileName)}
-                      <span className="text-sm font-medium">{job.fileName}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {job.status === 'completed' && <CheckCircle className="h-4 w-4 text-green-500" />}
-                      {job.status === 'error' && <XCircle className="h-4 w-4 text-red-500" />}
-                      {job.status === 'processing' && <Loader className="h-4 w-4 animate-spin text-blue-500" />}
-                      <Badge variant={
-                        job.status === 'completed' ? 'default' :
-                        job.status === 'error' ? 'destructive' : 'secondary'
-                      }>
-                        {job.status}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
           </CardContent>
         </Card>
       )}
