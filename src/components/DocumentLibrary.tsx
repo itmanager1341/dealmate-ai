@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -131,7 +130,6 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
     setProcessingDocs(prev => new Set(prev).add(documentId));
 
     try {
-      // Use either file_path or storage_path (fallback for legacy compatibility)
       const storageFilePath = document.file_path || document.storage_path;
       if (!storageFilePath) {
         throw new Error("No file path found for document");
@@ -149,7 +147,6 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
         throw downloadError;
       }
 
-      // Use either name or file_name (fallback for legacy compatibility)
       const fileName = document.name || document.file_name || 'unknown';
       const file = new File([fileData], fileName, { 
         type: getFileTypeFromExtension(document.file_type) 
@@ -157,8 +154,8 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
 
       console.log(`Processing file: ${fileName} (${file.size} bytes)`);
       
-      // Call AI processing directly
-      const result = await processFile(file, dealId);
+      // Call AI processing with document ID to enable data storage
+      const result = await processFile(file, dealId, documentId);
       
       if (result.success) {
         console.log(`AI processing successful for ${fileName}:`, result.data);
@@ -177,7 +174,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
           throw updateError;
         }
 
-        toast.success(`Successfully processed ${fileName}`);
+        toast.success(`Successfully processed ${fileName} - Data extracted and saved`);
         
         // Refresh documents list
         fetchDocuments();
@@ -215,7 +212,6 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
       return;
     }
 
-    // Process documents sequentially to avoid overwhelming the server
     for (const document of documentsToProcess) {
       await processDocument(document);
     }

@@ -1,4 +1,7 @@
+
 // AI API Integration for DealMate Frontend
+
+import { supabase } from '@/lib/supabase';
 
 const AI_SERVER_URL = 'https://zxjyxzhoz0d2e5-8000.proxy.runpod.net';
 
@@ -50,8 +53,118 @@ export async function checkAIServerHealth(): Promise<boolean> {
   }
 }
 
+// Store processing results in database
+async function storeProcessingResults(
+  file: File, 
+  dealId: string, 
+  documentId: string, 
+  aiResponse: any, 
+  processingMethod: string
+): Promise<void> {
+  console.log('Storing processing results for:', file.name, 'Method:', processingMethod);
+  
+  try {
+    // Store in ai_outputs table
+    const { error: aiOutputError } = await supabase
+      .from('ai_outputs')
+      .insert({
+        deal_id: dealId,
+        document_id: documentId,
+        agent_type: processingMethod,
+        output_type: 'processing_result',
+        output_text: JSON.stringify(aiResponse),
+        output_json: aiResponse
+      });
+
+    if (aiOutputError) {
+      console.error('Error storing AI output:', aiOutputError);
+    } else {
+      console.log('Successfully stored AI output');
+    }
+
+    // Store specific data based on processing method
+    if (processingMethod === 'excel' && aiResponse.chunks) {
+      for (const chunk of aiResponse.chunks) {
+        const { error: chunkError } = await supabase
+          .from('xlsx_chunks')
+          .insert({
+            document_id: documentId,
+            sheet_name: chunk.sheet_name || 'Unknown',
+            chunk_label: chunk.label || 'Data Chunk',
+            data: chunk.data,
+            verified_by_user: false
+          });
+
+        if (chunkError) {
+          console.error('Error storing Excel chunk:', chunkError);
+        }
+      }
+      console.log('Successfully stored Excel chunks');
+    }
+
+    if (processingMethod === 'audio' && aiResponse.transcript) {
+      const { error: transcriptError } = await supabase
+        .from('transcripts')
+        .insert({
+          document_id: documentId,
+          content: aiResponse.transcript,
+          timestamps: aiResponse.timestamps || {}
+        });
+
+      if (transcriptError) {
+        console.error('Error storing transcript:', transcriptError);
+      } else {
+        console.log('Successfully stored transcript');
+      }
+    }
+
+    // Extract and store metrics if available
+    if (aiResponse.metrics && Array.isArray(aiResponse.metrics)) {
+      for (const metric of aiResponse.metrics) {
+        const { error: metricError } = await supabase
+          .from('deal_metrics')
+          .insert({
+            deal_id: dealId,
+            metric_name: metric.name,
+            metric_value: metric.value,
+            metric_unit: metric.unit || '',
+            pinned: false
+          });
+
+        if (metricError) {
+          console.error('Error storing metric:', metricError);
+        }
+      }
+      console.log('Successfully stored metrics');
+    }
+
+    // Log the processing activity
+    const { error: logError } = await supabase
+      .from('agent_logs')
+      .insert({
+        agent_name: `${processingMethod}_processor`,
+        status: 'success',
+        input_payload: {
+          file_name: file.name,
+          file_size: file.size,
+          deal_id: dealId
+        },
+        output_payload: aiResponse
+      });
+
+    if (logError) {
+      console.error('Error storing agent log:', logError);
+    } else {
+      console.log('Successfully stored agent log');
+    }
+
+  } catch (error) {
+    console.error('Error in storeProcessingResults:', error);
+  }
+}
+
 // Transcribe audio files (MP3, WAV)
-export async function transcribeAudio(file: File, dealId: string): Promise<AIResponse> {
+export async function transcribeAudio(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
     const formData = new FormData();
     formData.append('file', file);
@@ -68,6 +181,12 @@ export async function transcribeAudio(file: File, dealId: string): Promise<AIRes
     }
 
     const data = await response.json();
+    
+    // Store results in database if documentId is provided
+    if (documentId) {
+      await storeProcessingResults(file, dealId, documentId, data, 'audio');
+    }
+
     return {
       success: true,
       data: data
@@ -82,7 +201,7 @@ export async function transcribeAudio(file: File, dealId: string): Promise<AIRes
 }
 
 // Process Excel files for financial metrics
-export async function processExcel(file: File, dealId: string): Promise<AIResponse> {
+export async function processExcel(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
     const formData = new FormData();
     formData.append('file', file);
@@ -99,6 +218,12 @@ export async function processExcel(file: File, dealId: string): Promise<AIRespon
     }
 
     const data = await response.json();
+    
+    // Store results in database if documentId is provided
+    if (documentId) {
+      await storeProcessingResults(file, dealId, documentId, data, 'excel');
+    }
+
     return {
       success: true,
       data: data
@@ -113,7 +238,7 @@ export async function processExcel(file: File, dealId: string): Promise<AIRespon
 }
 
 // Process documents (PDF, DOCX) for business analysis
-export async function processDocument(file: File, dealId: string): Promise<AIResponse> {
+export async function processDocument(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
     const formData = new FormData();
     formData.append('file', file);
@@ -130,6 +255,12 @@ export async function processDocument(file: File, dealId: string): Promise<AIRes
     }
 
     const data = await response.json();
+    
+    // Store results in database if documentId is provided
+    if (documentId) {
+      await storeProcessingResults(file, dealId, documentId, data, 'document');
+    }
+
     return {
       success: true,
       data: data
@@ -199,16 +330,16 @@ export function getProcessingMethod(fileName: string): 'audio' | 'excel' | 'docu
 }
 
 // Main file processing orchestrator
-export async function processFile(file: File, dealId: string): Promise<AIResponse> {
+export async function processFile(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   const processingMethod = getProcessingMethod(file.name);
   
   switch (processingMethod) {
     case 'audio':
-      return await transcribeAudio(file, dealId);
+      return await transcribeAudio(file, dealId, documentId);
     case 'excel':
-      return await processExcel(file, dealId);
+      return await processExcel(file, dealId, documentId);
     case 'document':
-      return await processDocument(file, dealId);
+      return await processDocument(file, dealId, documentId);
     default:
       return {
         success: false,

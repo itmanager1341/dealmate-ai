@@ -11,6 +11,9 @@ import { toast } from "sonner";
 import { File, FileText, MessageSquare, BarChart2, FileQuestion, FileEdit, ChevronLeft } from "lucide-react";
 import AIFileUpload from "@/components/AIFileUpload";
 import { DocumentLibrary } from "@/components/DocumentLibrary";
+import { ExcelChunksView } from "@/components/ExcelChunksView";
+import { TranscriptsView } from "@/components/TranscriptsView";
+import { MetricsView } from "@/components/MetricsView";
 
 export default function DealWorkspace() {
   const { id } = useParams<{ id: string }>();
@@ -158,14 +161,12 @@ export default function DealWorkspace() {
               <p className="text-sm text-muted-foreground mb-4">Upload and manage documents for deal analysis</p>
             </div>
             
-            {/* Document Library - Show existing documents */}
             <DocumentLibrary 
               dealId={deal.id} 
               key={documentUpdateTrigger}
               onDocumentUpdate={handleDocumentUpdate}
             />
             
-            {/* File Upload Section */}
             <div>
               <h4 className="text-md font-medium mb-3">Upload New Documents</h4>
               <AIFileUpload 
@@ -181,30 +182,15 @@ export default function DealWorkspace() {
           </TabsContent>
           
           <TabsContent value="transcripts" className="p-4 m-0">
-            <div className="text-center py-12">
-              <FileText className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-1">No transcripts available</h3>
-              <p className="text-sm text-muted-foreground mb-4">Upload audio files to generate transcripts</p>
-              <Button>Upload Audio</Button>
-            </div>
+            <TranscriptsView dealId={deal.id} />
           </TabsContent>
           
           <TabsContent value="excel" className="p-4 m-0">
-            <div className="text-center py-12">
-              <BarChart2 className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-1">No Excel data available</h3>
-              <p className="text-sm text-muted-foreground mb-4">Upload Excel files to extract data</p>
-              <Button>Upload Excel Files</Button>
-            </div>
+            <ExcelChunksView dealId={deal.id} />
           </TabsContent>
           
           <TabsContent value="metrics" className="p-4 m-0">
-            <div className="text-center py-12">
-              <BarChart2 className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-1">No metrics available</h3>
-              <p className="text-sm text-muted-foreground mb-4">Run analysis to extract metrics</p>
-              <Button>Run Analysis</Button>
-            </div>
+            <MetricsView dealId={deal.id} />
           </TabsContent>
           
           <TabsContent value="agent" className="p-4 m-0">
