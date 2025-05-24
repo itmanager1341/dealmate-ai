@@ -21,8 +21,21 @@ export interface DealFile {
 // Health check for AI server
 export async function checkAIServerHealth(): Promise<boolean> {
   try {
-    const response = await fetch(`${AI_SERVER_URL}/health`);
+    const response = await fetch(`${AI_SERVER_URL}/health`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      mode: 'cors',
+    });
+    
+    if (!response.ok) {
+      console.error('AI server health check failed with status:', response.status);
+      return false;
+    }
+    
     const data = await response.json();
+    console.log('AI server health check response:', data);
     return data.status === 'healthy';
   } catch (error) {
     console.error('AI server health check failed:', error);
@@ -40,6 +53,7 @@ export async function transcribeAudio(file: File, dealId: string): Promise<AIRes
     const response = await fetch(`${AI_SERVER_URL}/transcribe`, {
       method: 'POST',
       body: formData,
+      mode: 'cors',
     });
 
     if (!response.ok) {
@@ -70,6 +84,7 @@ export async function processExcel(file: File, dealId: string): Promise<AIRespon
     const response = await fetch(`${AI_SERVER_URL}/process-excel`, {
       method: 'POST',
       body: formData,
+      mode: 'cors',
     });
 
     if (!response.ok) {
@@ -100,6 +115,7 @@ export async function processDocument(file: File, dealId: string): Promise<AIRes
     const response = await fetch(`${AI_SERVER_URL}/process-document`, {
       method: 'POST',
       body: formData,
+      mode: 'cors',
     });
 
     if (!response.ok) {
@@ -132,6 +148,7 @@ export async function generateMemo(dealId: string, requestedSections?: string[])
         deal_id: dealId,
         sections: requestedSections || ['executive_summary', 'financial_analysis', 'risks', 'recommendation']
       }),
+      mode: 'cors',
     });
 
     if (!response.ok) {
@@ -196,7 +213,13 @@ export async function processFile(file: File, dealId: string): Promise<AIRespons
 // Processing status checker (for long-running operations)
 export async function checkProcessingStatus(jobId: string): Promise<AIResponse> {
   try {
-    const response = await fetch(`${AI_SERVER_URL}/status/${jobId}`);
+    const response = await fetch(`${AI_SERVER_URL}/status/${jobId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      mode: 'cors',
+    });
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
