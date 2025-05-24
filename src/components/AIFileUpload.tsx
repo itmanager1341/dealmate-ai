@@ -40,13 +40,13 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [serverStatus, setServerStatus] = useState<'checking' | 'healthy' | 'error'>('checking');
+  const [processingProgress, setProcessingProgress] = useState<{[key: string]: string}>({});
   
   const {
     jobs,
     isServerHealthy,
     checkHealth,
-    processFiles,
-    generateDealMemo,
+    processFileAsync,
     getProcessingStats
   } = useFileProcessing();
 
@@ -134,6 +134,14 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
     
     setIsProcessing(true);
     const processedResults = [];
+    const fileProgressKeys = uploadedFiles.map(file => file.name);
+    
+    // Initialize progress tracking
+    const initialProgress: {[key: string]: string} = {};
+    fileProgressKeys.forEach(key => {
+      initialProgress[key] = 'starting';
+    });
+    setProcessingProgress(initialProgress);
     
     try {
       console.log(`Starting to process ${uploadedFiles.length} files`);
@@ -142,49 +150,61 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
       for (const file of uploadedFiles) {
         try {
           console.log(`Processing file: ${file.name}`);
+          setProcessingProgress(prev => ({ ...prev, [file.name]: 'processing' }));
           
-          // Create a single job for this file
-          const jobId = await processFiles([file], dealId);
+          // Process the file through AI
+          const jobId = await processFileAsync(file, dealId);
           
-          // Wait for this specific job to complete
+          // Wait for this specific job to complete by checking jobs array
           let attempts = 0;
-          const maxAttempts = 30; // 30 seconds timeout
+          const maxAttempts = 60; // 60 seconds timeout
+          let jobCompleted = false;
           
-          while (attempts < maxAttempts) {
-            const job = jobs.find(j => jobId.includes(j.id));
+          while (attempts < maxAttempts && !jobCompleted) {
+            // Wait a bit before checking
+            await new Promise(resolve => setTimeout(resolve, 1000));
             
-            if (job && job.status === 'completed') {
-              console.log(`AI processing completed for ${file.name}`);
-              
-              // Save file to database with AI results
-              const savedDocument = await saveFileToDatabase(file, job.result);
-              processedResults.push({
-                file: file.name,
-                document: savedDocument,
-                aiResult: job.result
-              });
-              
-              toast.success(`Successfully processed ${file.name}`);
-              break;
-            } else if (job && job.status === 'error') {
-              console.error(`AI processing failed for ${file.name}:`, job.error);
-              toast.error(`AI processing failed for ${file.name}`);
-              break;
+            // Find the job by ID
+            const currentJob = jobs.find(j => j.id === jobId);
+            
+            if (currentJob) {
+              if (currentJob.status === 'completed') {
+                console.log(`AI processing completed for ${file.name}`);
+                setProcessingProgress(prev => ({ ...prev, [file.name]: 'saving' }));
+                
+                // Save file to database with AI results
+                const savedDocument = await saveFileToDatabase(file, currentJob.result);
+                processedResults.push({
+                  file: file.name,
+                  document: savedDocument,
+                  aiResult: currentJob.result
+                });
+                
+                setProcessingProgress(prev => ({ ...prev, [file.name]: 'completed' }));
+                toast.success(`Successfully processed ${file.name}`);
+                jobCompleted = true;
+                
+              } else if (currentJob.status === 'error') {
+                console.error(`AI processing failed for ${file.name}:`, currentJob.error);
+                setProcessingProgress(prev => ({ ...prev, [file.name]: 'error' }));
+                toast.error(`AI processing failed for ${file.name}: ${currentJob.error}`);
+                jobCompleted = true;
+              }
             }
             
-            // Wait 1 second before checking again
-            await new Promise(resolve => setTimeout(resolve, 1000));
             attempts++;
           }
           
-          if (attempts >= maxAttempts) {
+          if (!jobCompleted) {
             console.error(`Timeout waiting for ${file.name} to process`);
+            setProcessingProgress(prev => ({ ...prev, [file.name]: 'timeout' }));
             toast.error(`Processing timeout for ${file.name}`);
           }
           
         } catch (error) {
           console.error(`Error processing ${file.name}:`, error);
-          toast.error(`Failed to process ${file.name}`);
+          setProcessingProgress(prev => ({ ...prev, [file.name]: 'error' }));
+          toast.error(`Failed to process ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
       }
       
@@ -195,6 +215,7 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
       
       // Clear uploaded files after processing
       setUploadedFiles([]);
+      setProcessingProgress({});
       
       toast.success(`Processing complete! ${processedResults.length} of ${uploadedFiles.length} files processed successfully.`);
       
@@ -229,6 +250,27 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
       case 'excel': return 'bg-green-100 text-green-800';
       case 'document': return 'bg-purple-100 text-purple-800';
       default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  // Get progress status badge
+  const getProgressBadge = (fileName: string) => {
+    const status = processingProgress[fileName];
+    switch (status) {
+      case 'starting':
+        return <Badge variant="secondary">Starting...</Badge>;
+      case 'processing':
+        return <Badge variant="secondary">Processing...</Badge>;
+      case 'saving':
+        return <Badge variant="secondary">Saving...</Badge>;
+      case 'completed':
+        return <Badge variant="default" className="bg-green-500">Completed</Badge>;
+      case 'error':
+        return <Badge variant="destructive">Error</Badge>;
+      case 'timeout':
+        return <Badge variant="destructive">Timeout</Badge>;
+      default:
+        return null;
     }
   };
 
@@ -295,6 +337,8 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
             <div className="space-y-2 mb-4">
               {uploadedFiles.map((file, index) => {
                 const method = getProcessingMethod(file.name);
+                const progressBadge = getProgressBadge(file.name);
+                
                 return (
                   <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                     <div className="flex items-center gap-3">
@@ -311,6 +355,7 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
                         {method === 'document' && 'Document Analysis'}
                         {method === 'unknown' && 'Unknown Type'}
                       </Badge>
+                      {progressBadge}
                     </div>
                     <Button
                       variant="ghost"
@@ -347,7 +392,7 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
       )}
 
       {/* Processing Status */}
-      {jobs.length > 0 && (
+      {(jobs.length > 0 || Object.keys(processingProgress).length > 0) && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">AI Processing Status</CardTitle>
@@ -355,13 +400,15 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
           <CardContent>
             <div className="space-y-3">
               {/* Overall Progress */}
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Overall Progress</span>
-                  <span>{stats.completed}/{stats.total} completed</span>
+              {stats.total > 0 && (
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Overall Progress</span>
+                    <span>{stats.completed}/{stats.total} completed</span>
+                  </div>
+                  <Progress value={(stats.completed / stats.total) * 100} />
                 </div>
-                <Progress value={(stats.completed / stats.total) * 100} />
-              </div>
+              )}
 
               {/* Individual Job Status */}
               <div className="space-y-2">
