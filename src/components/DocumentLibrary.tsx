@@ -26,7 +26,7 @@ import {
   Zap
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { useFileProcessing } from "../hooks/useFileProcessing";
+import { processFile, checkAIServerHealth } from "../utils/aiApi";
 
 interface DocumentLibraryProps {
   dealId: string;
@@ -39,18 +39,19 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
   const [processingDocs, setProcessingDocs] = useState<Set<string>>(new Set());
-
-  const {
-    jobs,
-    isServerHealthy,
-    checkHealth,
-    processFileAsync
-  } = useFileProcessing();
+  const [isServerHealthy, setIsServerHealthy] = useState<boolean | null>(null);
 
   useEffect(() => {
     fetchDocuments();
-    checkHealth();
-  }, [dealId, checkHealth]);
+    checkServerHealth();
+  }, [dealId]);
+
+  const checkServerHealth = async () => {
+    console.log('Checking AI server health...');
+    const healthy = await checkAIServerHealth();
+    setIsServerHealthy(healthy);
+    console.log('AI server health:', healthy);
+  };
 
   const fetchDocuments = async () => {
     try {
@@ -126,7 +127,8 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
       return;
     }
 
-    setProcessingDocs(prev => new Set(prev).add(document.id));
+    const documentId = document.id;
+    setProcessingDocs(prev => new Set(prev).add(documentId));
 
     try {
       // Use either file_path or storage_path (fallback for legacy compatibility)
@@ -135,12 +137,17 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
         throw new Error("No file path found for document");
       }
 
-      // Create a File object from the stored document
+      console.log(`Starting AI processing for document: ${document.name || document.file_name}`);
+      
+      // Download the file from storage
       const { data: fileData, error: downloadError } = await supabase.storage
         .from('documents')
         .download(storageFilePath);
 
-      if (downloadError) throw downloadError;
+      if (downloadError) {
+        console.error("Error downloading file:", downloadError);
+        throw downloadError;
+      }
 
       // Use either name or file_name (fallback for legacy compatibility)
       const fileName = document.name || document.file_name || 'unknown';
@@ -148,47 +155,37 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
         type: getFileTypeFromExtension(document.file_type) 
       });
 
-      console.log(`Starting AI processing for ${fileName}`);
+      console.log(`Processing file: ${fileName} (${file.size} bytes)`);
       
-      const jobId = await processFileAsync(file, dealId);
+      // Call AI processing directly
+      const result = await processFile(file, dealId);
       
-      // Wait for processing to complete
-      let attempts = 0;
-      const maxAttempts = 60;
-      let jobCompleted = false;
-      
-      while (attempts < maxAttempts && !jobCompleted) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      if (result.success) {
+        console.log(`AI processing successful for ${fileName}:`, result.data);
         
-        const currentJob = jobs.find(j => j.id === jobId);
-        
-        if (currentJob) {
-          if (currentJob.status === 'completed') {
-            // Update document as processed
-            await supabase
-              .from('documents')
-              .update({ 
-                processed: true,
-                classified_as: currentJob.result?.classification || null
-              })
-              .eq('id', document.id);
+        // Update document as processed in database
+        const { error: updateError } = await supabase
+          .from('documents')
+          .update({ 
+            processed: true,
+            classified_as: result.data?.classification || 'Processed'
+          })
+          .eq('id', documentId);
 
-            toast.success(`Successfully processed ${fileName}`);
-            fetchDocuments();
-            jobCompleted = true;
-            
-          } else if (currentJob.status === 'error') {
-            console.error(`AI processing failed for ${fileName}:`, currentJob.error);
-            toast.error(`AI processing failed: ${currentJob.error}`);
-            jobCompleted = true;
-          }
+        if (updateError) {
+          console.error("Error updating document status:", updateError);
+          throw updateError;
         }
+
+        toast.success(`Successfully processed ${fileName}`);
         
-        attempts++;
-      }
-      
-      if (!jobCompleted) {
-        toast.error(`Processing timeout for ${fileName}`);
+        // Refresh documents list
+        fetchDocuments();
+        onDocumentUpdate?.();
+        
+      } else {
+        console.error(`AI processing failed for ${fileName}:`, result.error);
+        throw new Error(result.error || 'Processing failed');
       }
       
     } catch (error) {
@@ -197,7 +194,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
     } finally {
       setProcessingDocs(prev => {
         const newSet = new Set(prev);
-        newSet.delete(document.id);
+        newSet.delete(documentId);
         return newSet;
       });
     }
@@ -218,6 +215,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
       return;
     }
 
+    // Process documents sequentially to avoid overwhelming the server
     for (const document of documentsToProcess) {
       await processDocument(document);
     }
@@ -300,6 +298,11 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
             {unprocessedCount > 0 && (
               <Badge variant="secondary" className="ml-2">
                 {unprocessedCount} unprocessed
+              </Badge>
+            )}
+            {isServerHealthy !== null && (
+              <Badge variant={isServerHealthy ? "default" : "destructive"} className="ml-2">
+                AI Server: {isServerHealthy ? "Online" : "Offline"}
               </Badge>
             )}
           </CardTitle>
