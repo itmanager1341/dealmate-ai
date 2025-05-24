@@ -10,6 +10,7 @@ import { Deal } from "@/types";
 import { toast } from "sonner";
 import { File, FileText, MessageSquare, BarChart2, FileQuestion, FileEdit, ChevronLeft } from "lucide-react";
 import AIFileUpload from "@/components/AIFileUpload";
+import { DocumentLibrary } from "@/components/DocumentLibrary";
 
 export default function DealWorkspace() {
   const { id } = useParams<{ id: string }>();
@@ -17,6 +18,7 @@ export default function DealWorkspace() {
   const [deal, setDeal] = useState<Deal | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("documents");
+  const [documentUpdateTrigger, setDocumentUpdateTrigger] = useState(0);
 
   useEffect(() => {
     const fetchDeal = async () => {
@@ -56,6 +58,10 @@ export default function DealWorkspace() {
     
     fetchDeal();
   }, [id, navigate]);
+
+  const handleDocumentUpdate = () => {
+    setDocumentUpdateTrigger(prev => prev + 1);
+  };
 
   if (loading) {
     return (
@@ -146,20 +152,32 @@ export default function DealWorkspace() {
         </TabsList>
         
         <div className="border rounded-md min-h-[calc(100vh-240px)]">
-          <TabsContent value="documents" className="p-4 m-0">
+          <TabsContent value="documents" className="p-4 m-0 space-y-6">
             <div className="mb-6">
               <h3 className="text-lg font-medium mb-2">Document Management</h3>
               <p className="text-sm text-muted-foreground mb-4">Upload and manage documents for deal analysis</p>
             </div>
             
-            <AIFileUpload 
-              dealId={deal.id}
-              onProcessingComplete={(results) => {
-                console.log('Processing completed:', results);
-                toast.success(`Successfully processed ${results.length} files`);
-              }}
-              maxFiles={10}
+            {/* Document Library - Show existing documents */}
+            <DocumentLibrary 
+              dealId={deal.id} 
+              key={documentUpdateTrigger}
+              onDocumentUpdate={handleDocumentUpdate}
             />
+            
+            {/* File Upload Section */}
+            <div>
+              <h4 className="text-md font-medium mb-3">Upload New Documents</h4>
+              <AIFileUpload 
+                dealId={deal.id}
+                onProcessingComplete={(results) => {
+                  console.log('Processing completed:', results);
+                  toast.success(`Successfully processed ${results.length} files`);
+                  handleDocumentUpdate();
+                }}
+                maxFiles={10}
+              />
+            </div>
           </TabsContent>
           
           <TabsContent value="transcripts" className="p-4 m-0">

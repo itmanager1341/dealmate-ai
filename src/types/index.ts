@@ -26,6 +26,7 @@ export interface Document {
   file_type: 'pdf' | 'docx' | 'xlsx' | 'mp3';
   size: number;
   created_at: string;
+  uploaded_at: string;
   processed: boolean;
   classification?: string;
 }
