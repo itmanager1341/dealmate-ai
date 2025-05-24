@@ -107,13 +107,17 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
           if (fileExt === 'xlsx') fileType = 'xlsx';
           if (fileExt === 'mp3') fileType = 'mp3';
 
-          // Save to database immediately (not processed yet)
+          // Save to database immediately (populate both legacy and current columns)
           const { data: documentData, error: dbError } = await supabase
             .from('documents')
             .insert({
               deal_id: dealId,
+              // Current columns
               name: file.name,
               file_path: fileName,
+              // Legacy columns (for backward compatibility)
+              file_name: file.name,
+              storage_path: fileName,
               file_type: fileType,
               size: file.size,
               processed: false,

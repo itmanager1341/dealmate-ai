@@ -129,18 +129,26 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
     setProcessingDocs(prev => new Set(prev).add(document.id));
 
     try {
+      // Use either file_path or storage_path (fallback for legacy compatibility)
+      const storageFilePath = document.file_path || document.storage_path;
+      if (!storageFilePath) {
+        throw new Error("No file path found for document");
+      }
+
       // Create a File object from the stored document
       const { data: fileData, error: downloadError } = await supabase.storage
         .from('documents')
-        .download(document.file_path);
+        .download(storageFilePath);
 
       if (downloadError) throw downloadError;
 
-      const file = new File([fileData], document.name, { 
+      // Use either name or file_name (fallback for legacy compatibility)
+      const fileName = document.name || document.file_name || 'unknown';
+      const file = new File([fileData], fileName, { 
         type: getFileTypeFromExtension(document.file_type) 
       });
 
-      console.log(`Starting AI processing for ${document.name}`);
+      console.log(`Starting AI processing for ${fileName}`);
       
       const jobId = await processFileAsync(file, dealId);
       
@@ -165,12 +173,12 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
               })
               .eq('id', document.id);
 
-            toast.success(`Successfully processed ${document.name}`);
+            toast.success(`Successfully processed ${fileName}`);
             fetchDocuments();
             jobCompleted = true;
             
           } else if (currentJob.status === 'error') {
-            console.error(`AI processing failed for ${document.name}:`, currentJob.error);
+            console.error(`AI processing failed for ${fileName}:`, currentJob.error);
             toast.error(`AI processing failed: ${currentJob.error}`);
             jobCompleted = true;
           }
@@ -180,12 +188,12 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
       }
       
       if (!jobCompleted) {
-        toast.error(`Processing timeout for ${document.name}`);
+        toast.error(`Processing timeout for ${fileName}`);
       }
       
     } catch (error) {
-      console.error(`Error processing ${document.name}:`, error);
-      toast.error(`Failed to process ${document.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error(`Error processing ${document.name || document.file_name}:`, error);
+      toast.error(`Failed to process ${document.name || document.file_name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setProcessingDocs(prev => {
         const newSet = new Set(prev);
@@ -263,9 +271,10 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
     setSelectedDocs(newSelected);
   };
 
-  const filteredDocuments = documents.filter(doc =>
-    doc.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredDocuments = documents.filter(doc => {
+    const displayName = doc.name || doc.file_name || '';
+    return displayName.toLowerCase().includes(searchTerm.toLowerCase());
+  });
 
   const unprocessedCount = documents.filter(doc => !doc.processed).length;
 
@@ -359,6 +368,9 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
             <TableBody>
               {filteredDocuments.map((document) => {
                 const isProcessing = processingDocs.has(document.id);
+                const displayName = document.name || document.file_name || 'Unknown';
+                const filePath = document.file_path || document.storage_path || '';
+                
                 return (
                   <TableRow key={document.id}>
                     <TableCell>
@@ -371,7 +383,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
                       <div className="flex items-center gap-3">
                         {getFileIcon(document.file_type)}
                         <div>
-                          <p className="font-medium">{document.name}</p>
+                          <p className="font-medium">{displayName}</p>
                           {document.classified_as && (
                             <p className="text-sm text-muted-foreground">
                               {document.classified_as}
@@ -417,7 +429,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => handleDownload(document.file_path, document.name)}
+                          onClick={() => handleDownload(filePath, displayName)}
                           title="Download"
                         >
                           <Download className="h-4 w-4" />
@@ -425,7 +437,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => handleDelete(document.id, document.file_path)}
+                          onClick={() => handleDelete(document.id, filePath)}
                           title="Delete"
                         >
                           <Trash2 className="h-4 w-4" />
