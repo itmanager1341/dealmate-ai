@@ -63,14 +63,6 @@ function AppSidebar() {
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild className={cn(isActive('/deal') && "bg-sidebar-accent text-sidebar-accent-foreground")}>
-              <Link to="/deal/recent">
-                <FileText className="h-5 w-5 mr-2" />
-                <span>Deal Workspace</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
             <SidebarMenuButton asChild className={cn(isActive('/compare') && "bg-sidebar-accent text-sidebar-accent-foreground")}>
               <Link to="/compare">
                 <BarChart2 className="h-5 w-5 mr-2" />

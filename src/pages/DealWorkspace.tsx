@@ -1,6 +1,5 @@
-
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,13 +10,27 @@ import { File, FileText, MessageSquare, BarChart2, FileQuestion, FileEdit } from
 
 export default function DealWorkspace() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [deal, setDeal] = useState<Deal | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("documents");
 
   useEffect(() => {
     const fetchDeal = async () => {
-      if (!id) return;
+      if (!id) {
+        // If no ID provided, redirect to dashboard
+        navigate("/dashboard");
+        return;
+      }
+
+      // Check if ID is a valid UUID format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(id)) {
+        console.error("Invalid deal ID format:", id);
+        toast.error("Invalid deal ID");
+        navigate("/dashboard");
+        return;
+      }
       
       try {
         const { data, error } = await supabase
@@ -34,13 +47,14 @@ export default function DealWorkspace() {
       } catch (error: any) {
         console.error("Error fetching deal:", error);
         toast.error("Failed to load deal details");
+        navigate("/dashboard");
       } finally {
         setLoading(false);
       }
     };
     
     fetchDeal();
-  }, [id]);
+  }, [id, navigate]);
 
   if (loading) {
     return (
