@@ -1,4 +1,3 @@
-
 // AI API Integration for DealMate Frontend
 
 import { supabase } from '@/lib/supabase';
@@ -62,6 +61,7 @@ async function storeProcessingResults(
   processingMethod: string
 ): Promise<void> {
   console.log('Storing processing results for:', file.name, 'Method:', processingMethod);
+  console.log('AI Response data structure:', JSON.stringify(aiResponse, null, 2));
   
   try {
     // Store in ai_outputs table
@@ -83,23 +83,104 @@ async function storeProcessingResults(
     }
 
     // Store specific data based on processing method
-    if (processingMethod === 'excel' && aiResponse.chunks) {
-      for (const chunk of aiResponse.chunks) {
+    if (processingMethod === 'excel' && aiResponse) {
+      // Handle Excel data - create chunks from the raw data and analysis
+      console.log('Processing Excel data for chunks...');
+      
+      // Create a chunk for the raw data preview if available
+      if (aiResponse.raw_data_preview) {
         const { error: chunkError } = await supabase
           .from('xlsx_chunks')
           .insert({
             document_id: documentId,
-            sheet_name: chunk.sheet_name || 'Unknown',
-            chunk_label: chunk.label || 'Data Chunk',
-            data: chunk.data,
+            sheet_name: aiResponse.sheets?.[0] || 'Unknown',
+            chunk_label: 'Raw Data Preview',
+            data: { raw_preview: aiResponse.raw_data_preview },
             verified_by_user: false
           });
 
         if (chunkError) {
-          console.error('Error storing Excel chunk:', chunkError);
+          console.error('Error storing raw data chunk:', chunkError);
+        } else {
+          console.log('Successfully stored raw data chunk');
         }
       }
-      console.log('Successfully stored Excel chunks');
+
+      // Create chunks from AI analysis if available
+      if (aiResponse.ai_analysis) {
+        try {
+          // Try to parse the AI analysis JSON
+          const analysisText = aiResponse.ai_analysis;
+          let analysisData = null;
+          
+          // Extract JSON from the analysis text
+          const jsonMatch = analysisText.match(/```json\n([\s\S]*?)\n```/);
+          if (jsonMatch) {
+            analysisData = JSON.parse(jsonMatch[1]);
+          }
+
+          if (analysisData && analysisData.financial_metrics) {
+            const { error: analysisChunkError } = await supabase
+              .from('xlsx_chunks')
+              .insert({
+                document_id: documentId,
+                sheet_name: aiResponse.sheets?.[0] || 'Analysis',
+                chunk_label: 'Financial Metrics Analysis',
+                data: analysisData.financial_metrics,
+                verified_by_user: false
+              });
+
+            if (analysisChunkError) {
+              console.error('Error storing analysis chunk:', analysisChunkError);
+            } else {
+              console.log('Successfully stored analysis chunk');
+            }
+
+            // Extract and store metrics
+            if (analysisData.financial_metrics.revenue) {
+              for (const [period, value] of Object.entries(analysisData.financial_metrics.revenue)) {
+                if (value !== null && typeof value === 'number') {
+                  const { error: metricError } = await supabase
+                    .from('deal_metrics')
+                    .insert({
+                      deal_id: dealId,
+                      metric_name: `Revenue ${period}`,
+                      metric_value: value,
+                      metric_unit: '$',
+                      pinned: false
+                    });
+
+                  if (metricError) {
+                    console.error('Error storing revenue metric:', metricError);
+                  }
+                }
+              }
+            }
+
+            if (analysisData.financial_metrics.growth_rate) {
+              for (const [period, value] of Object.entries(analysisData.financial_metrics.growth_rate)) {
+                if (value !== null && typeof value === 'number') {
+                  const { error: metricError } = await supabase
+                    .from('deal_metrics')
+                    .insert({
+                      deal_id: dealId,
+                      metric_name: `Growth Rate ${period}`,
+                      metric_value: value,
+                      metric_unit: '%',
+                      pinned: false
+                    });
+
+                  if (metricError) {
+                    console.error('Error storing growth metric:', metricError);
+                  }
+                }
+              }
+            }
+          }
+        } catch (parseError) {
+          console.error('Error parsing AI analysis:', parseError);
+        }
+      }
     }
 
     if (processingMethod === 'audio' && aiResponse.transcript) {
@@ -118,7 +199,7 @@ async function storeProcessingResults(
       }
     }
 
-    // Extract and store metrics if available
+    // Extract and store metrics if available (general metrics extraction)
     if (aiResponse.metrics && Array.isArray(aiResponse.metrics)) {
       for (const metric of aiResponse.metrics) {
         const { error: metricError } = await supabase
@@ -147,7 +228,8 @@ async function storeProcessingResults(
         input_payload: {
           file_name: file.name,
           file_size: file.size,
-          deal_id: dealId
+          deal_id: dealId,
+          document_id: documentId
         },
         output_payload: aiResponse
       });
@@ -160,6 +242,26 @@ async function storeProcessingResults(
 
   } catch (error) {
     console.error('Error in storeProcessingResults:', error);
+    
+    // Log the error
+    const { error: errorLogError } = await supabase
+      .from('agent_logs')
+      .insert({
+        agent_name: `${processingMethod}_processor`,
+        status: 'error',
+        error_message: error instanceof Error ? error.message : 'Unknown error',
+        input_payload: {
+          file_name: file.name,
+          file_size: file.size,
+          deal_id: dealId,
+          document_id: documentId
+        },
+        output_payload: null
+      });
+
+    if (errorLogError) {
+      console.error('Error storing error log:', errorLogError);
+    }
   }
 }
 
