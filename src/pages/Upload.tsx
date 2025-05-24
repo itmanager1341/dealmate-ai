@@ -71,7 +71,8 @@ export default function Upload() {
           industry: formData.industry,
           description: formData.description,
           status: 'active',
-          created_by: user.id
+          created_by: user.id,
+          user_id: user.id
         })
         .select();
       
@@ -94,13 +95,13 @@ export default function Upload() {
   
   const handleUploadComplete = (files: Array<{ path: string; name: string; type: string; size: number }>) => {
     if (files.length > 0 && dealId) {
-      navigate(`/deal/${dealId}`);
+      navigate(`/deal/${dealId}/details`);
     }
   };
   
   const handleSkip = () => {
     if (dealId) {
-      navigate(`/deal/${dealId}`);
+      navigate(`/deal/${dealId}/details`);
     }
   };
   

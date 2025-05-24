@@ -192,7 +192,10 @@ export type Database = {
       }
       deals: {
         Row: {
+          company_name: string | null
           created_at: string | null
+          created_by: string | null
+          description: string | null
           id: string
           industry: string | null
           name: string
@@ -201,7 +204,10 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          company_name?: string | null
           created_at?: string | null
+          created_by?: string | null
+          description?: string | null
           id?: string
           industry?: string | null
           name: string
@@ -210,7 +216,10 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          company_name?: string | null
           created_at?: string | null
+          created_by?: string | null
+          description?: string | null
           id?: string
           industry?: string | null
           name?: string
