@@ -8,6 +8,8 @@ import { Upload, File, FileText, UploadCloud, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { v4 as uuidv4 } from "uuid";
+import { getCurrentUser } from "@/lib/supabase";
+import { processFile } from "@/utils/aiApi";
 
 interface FileUploaderProps {
   dealId?: string;
@@ -77,17 +79,25 @@ export function FileUploader({
     const totalFiles = files.length;
     
     try {
+      // Get current user to create folder structure
+      const user = await getCurrentUser();
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const fileExt = file.name.split('.').pop();
-        const fileName = `${dealId}/${uuidv4()}.${fileExt}`;
-        const filePath = `${fileName}`;
+        const fileName = `${user.id}/${dealId}/${uuidv4()}.${fileExt}`;
+
+        console.log(`Uploading file ${i + 1}/${totalFiles}: ${file.name}`);
 
         const { error: uploadError } = await supabase.storage
           .from(bucketName)
-          .upload(filePath, file);
+          .upload(fileName, file);
 
         if (uploadError) {
+          console.error("Storage upload error:", uploadError);
           throw uploadError;
         }
 
@@ -97,24 +107,47 @@ export function FileUploader({
         if (fileExt === 'xlsx') fileType = 'xlsx';
         if (fileExt === 'mp3') fileType = 'mp3';
 
-        // Create document record in the database
-        const { error: dbError } = await supabase
+        // Create document record in the database with the correct column names
+        const { data: documentData, error: dbError } = await supabase
           .from('documents')
           .insert({
             deal_id: dealId,
             name: file.name,
-            file_path: filePath,
+            file_path: fileName,
             file_type: fileType,
             size: file.size,
-            processed: false
-          });
+            processed: false,
+            uploaded_by: user.id,
+            file_name: file.name, // Keep old column for compatibility
+            storage_path: fileName, // Keep old column for compatibility
+            is_audio: fileExt === 'mp3'
+          })
+          .select()
+          .single();
 
         if (dbError) {
+          console.error("Database insert error:", dbError);
           throw dbError;
         }
 
+        // Start AI processing in the background
+        if (documentData) {
+          console.log(`Starting AI processing for ${file.name}`);
+          processFile(file, dealId).then((result) => {
+            if (result.success) {
+              console.log(`AI processing completed for ${file.name}`);
+              toast.success(`AI analysis completed for ${file.name}`);
+            } else {
+              console.error(`AI processing failed for ${file.name}:`, result.error);
+              toast.error(`AI processing failed for ${file.name}`);
+            }
+          }).catch((error) => {
+            console.error(`AI processing error for ${file.name}:`, error);
+          });
+        }
+
         uploadedFiles.push({
-          path: filePath,
+          path: fileName,
           name: file.name,
           type: fileType,
           size: file.size

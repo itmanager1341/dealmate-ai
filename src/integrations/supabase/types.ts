@@ -242,9 +242,13 @@ export type Database = {
           classified_as: string | null
           deal_id: string | null
           file_name: string | null
+          file_path: string | null
           file_type: string | null
           id: string
           is_audio: boolean | null
+          name: string | null
+          processed: boolean | null
+          size: number | null
           storage_path: string | null
           uploaded_at: string | null
           uploaded_by: string | null
@@ -253,9 +257,13 @@ export type Database = {
           classified_as?: string | null
           deal_id?: string | null
           file_name?: string | null
+          file_path?: string | null
           file_type?: string | null
           id?: string
           is_audio?: boolean | null
+          name?: string | null
+          processed?: boolean | null
+          size?: number | null
           storage_path?: string | null
           uploaded_at?: string | null
           uploaded_by?: string | null
@@ -264,9 +272,13 @@ export type Database = {
           classified_as?: string | null
           deal_id?: string | null
           file_name?: string | null
+          file_path?: string | null
           file_type?: string | null
           id?: string
           is_audio?: boolean | null
+          name?: string | null
+          processed?: boolean | null
+          size?: number | null
           storage_path?: string | null
           uploaded_at?: string | null
           uploaded_by?: string | null
