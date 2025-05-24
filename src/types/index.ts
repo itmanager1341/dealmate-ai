@@ -1,4 +1,3 @@
-
 export interface User {
   id: string;
   email: string;
@@ -29,6 +28,9 @@ export interface Document {
   uploaded_at: string;
   processed: boolean;
   classified_as?: string;
+  // Legacy columns for backward compatibility
+  file_name?: string;
+  storage_path?: string;
 }
 
 export interface DealMetric {
