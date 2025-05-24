@@ -1,7 +1,4 @@
 
-// hooks/useFileProcessing.ts
-// React hook for managing AI file processing
-
 import { useState, useCallback } from 'react';
 import { processFile, generateMemo, checkAIServerHealth, AIResponse } from '../utils/aiApi';
 
@@ -48,10 +45,14 @@ export function useFileProcessing() {
     ));
 
     try {
+      console.log(`Starting AI processing for ${file.name}`);
+      
       // Process the file through AI
       const result = await processFile(file, dealId);
       
       if (result.success) {
+        console.log(`AI processing successful for ${file.name}:`, result.data);
+        
         // Update job as completed
         setJobs(prev => prev.map(job => 
           job.id === jobId 
@@ -69,6 +70,8 @@ export function useFileProcessing() {
         throw new Error(result.error || 'Processing failed');
       }
     } catch (error) {
+      console.error(`AI processing failed for ${file.name}:`, error);
+      
       // Update job as failed
       setJobs(prev => prev.map(job => 
         job.id === jobId 
@@ -87,8 +90,20 @@ export function useFileProcessing() {
 
   // Process multiple files
   const processFiles = useCallback(async (files: File[], dealId: string): Promise<string[]> => {
-    const promises = files.map(file => processFileAsync(file, dealId));
-    return Promise.all(promises);
+    const jobIds: string[] = [];
+    
+    // Process files sequentially to avoid overwhelming the AI server
+    for (const file of files) {
+      try {
+        const jobId = await processFileAsync(file, dealId);
+        jobIds.push(jobId);
+      } catch (error) {
+        console.error(`Failed to process ${file.name}:`, error);
+        // Continue processing other files even if one fails
+      }
+    }
+    
+    return jobIds;
   }, [processFileAsync]);
 
   // Generate memo after files are processed

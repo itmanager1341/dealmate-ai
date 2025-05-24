@@ -1,7 +1,4 @@
 
-// components/AIFileUpload.tsx
-// Enhanced file upload component with AI processing
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +17,10 @@ import {
   Zap,
   Brain
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { getCurrentUser } from '@/lib/supabase';
+import { toast } from 'sonner';
+import { v4 as uuidv4 } from 'uuid';
 import { useFileProcessing } from '../hooks/useFileProcessing';
 import { getProcessingMethod } from '../utils/aiApi';
 
@@ -81,26 +82,125 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
     disabled: isProcessing || serverStatus !== 'healthy'
   });
 
+  // Save file to database after successful processing
+  const saveFileToDatabase = async (file: File, aiResult: any) => {
+    try {
+      const user = await getCurrentUser();
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+
+      const fileExt = file.name.split('.').pop()?.toLowerCase();
+      let fileType: 'pdf' | 'docx' | 'xlsx' | 'mp3' = 'pdf';
+      if (fileExt === 'docx') fileType = 'docx';
+      if (fileExt === 'xlsx') fileType = 'xlsx';
+      if (fileExt === 'mp3') fileType = 'mp3';
+
+      // Create a file path for storage (even though we're not storing in Supabase storage for now)
+      const fileName = `${user.id}/${dealId}/${uuidv4()}.${fileExt}`;
+
+      // Insert document record
+      const { data: documentData, error: dbError } = await supabase
+        .from('documents')
+        .insert({
+          deal_id: dealId,
+          name: file.name,
+          file_path: fileName,
+          file_type: fileType,
+          size: file.size,
+          processed: true, // Mark as processed since AI processing is complete
+          uploaded_by: user.id,
+          classified_as: aiResult?.classification || null
+        })
+        .select()
+        .single();
+
+      if (dbError) {
+        console.error("Database insert error:", dbError);
+        throw dbError;
+      }
+
+      console.log(`File ${file.name} saved to database with ID: ${documentData.id}`);
+      return documentData;
+    } catch (error) {
+      console.error(`Error saving file ${file.name} to database:`, error);
+      throw error;
+    }
+  };
+
   // Process all uploaded files
   const handleProcessFiles = async () => {
     if (uploadedFiles.length === 0) return;
     
     setIsProcessing(true);
+    const processedResults = [];
+    
     try {
-      const jobIds = await processFiles(uploadedFiles, dealId);
-      console.log('Processing jobs started:', jobIds);
+      console.log(`Starting to process ${uploadedFiles.length} files`);
       
-      // Optional: Generate memo after processing
-      // const memoResult = await generateDealMemo(dealId);
-      
-      if (onProcessingComplete) {
-        const results = jobs.filter(job => 
-          jobIds.includes(job.id) && job.status === 'completed'
-        ).map(job => job.result);
-        onProcessingComplete(results);
+      // Process files one by one to ensure proper database saving
+      for (const file of uploadedFiles) {
+        try {
+          console.log(`Processing file: ${file.name}`);
+          
+          // Create a single job for this file
+          const jobId = await processFiles([file], dealId);
+          
+          // Wait for this specific job to complete
+          let attempts = 0;
+          const maxAttempts = 30; // 30 seconds timeout
+          
+          while (attempts < maxAttempts) {
+            const job = jobs.find(j => jobId.includes(j.id));
+            
+            if (job && job.status === 'completed') {
+              console.log(`AI processing completed for ${file.name}`);
+              
+              // Save file to database with AI results
+              const savedDocument = await saveFileToDatabase(file, job.result);
+              processedResults.push({
+                file: file.name,
+                document: savedDocument,
+                aiResult: job.result
+              });
+              
+              toast.success(`Successfully processed ${file.name}`);
+              break;
+            } else if (job && job.status === 'error') {
+              console.error(`AI processing failed for ${file.name}:`, job.error);
+              toast.error(`AI processing failed for ${file.name}`);
+              break;
+            }
+            
+            // Wait 1 second before checking again
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            attempts++;
+          }
+          
+          if (attempts >= maxAttempts) {
+            console.error(`Timeout waiting for ${file.name} to process`);
+            toast.error(`Processing timeout for ${file.name}`);
+          }
+          
+        } catch (error) {
+          console.error(`Error processing ${file.name}:`, error);
+          toast.error(`Failed to process ${file.name}`);
+        }
       }
+      
+      // Call completion callback with results
+      if (onProcessingComplete && processedResults.length > 0) {
+        onProcessingComplete(processedResults);
+      }
+      
+      // Clear uploaded files after processing
+      setUploadedFiles([]);
+      
+      toast.success(`Processing complete! ${processedResults.length} of ${uploadedFiles.length} files processed successfully.`);
+      
     } catch (error) {
       console.error('File processing failed:', error);
+      toast.error('File processing failed');
     } finally {
       setIsProcessing(false);
     }
