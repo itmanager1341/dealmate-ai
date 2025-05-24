@@ -14,14 +14,12 @@ import {
   CheckCircle, 
   XCircle, 
   Loader,
-  Zap,
-  Brain
+  Zap
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { v4 as uuidv4 } from 'uuid';
-import { useFileProcessing } from '../hooks/useFileProcessing';
 import { getProcessingMethod } from '../utils/aiApi';
 
 interface AIFileUploadProps {
@@ -40,16 +38,6 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{[key: string]: number}>({});
-  
-  const {
-    isServerHealthy,
-    checkHealth
-  } = useFileProcessing();
-
-  // Check server health on mount
-  useEffect(() => {
-    checkHealth();
-  }, [checkHealth]);
 
   // File drop handler
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -72,7 +60,7 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
     disabled: isUploading
   });
 
-  // Upload files to storage and database
+  // Upload files to storage and database immediately
   const handleUploadFiles = async () => {
     if (uploadedFiles.length === 0) return;
     
@@ -119,7 +107,7 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
           if (fileExt === 'xlsx') fileType = 'xlsx';
           if (fileExt === 'mp3') fileType = 'mp3';
 
-          // Save to database
+          // Save to database immediately (not processed yet)
           const { data: documentData, error: dbError } = await supabase
             .from('documents')
             .insert({
@@ -128,9 +116,8 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
               file_path: fileName,
               file_type: fileType,
               size: file.size,
-              processed: false, // Mark as not processed initially
-              uploaded_by: user.id,
-              classified_as: null
+              processed: false,
+              uploaded_by: user.id
             })
             .select()
             .single();
@@ -212,17 +199,6 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
 
   return (
     <div className={`space-y-4 ${className}`}>
-      {/* Server Status */}
-      <Alert className={isServerHealthy ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}>
-        <Zap className="h-4 w-4" />
-        <AlertDescription>
-          AI Server Status: {' '}
-          {isServerHealthy === null && <Badge variant="secondary">Checking...</Badge>}
-          {isServerHealthy === true && <Badge variant="default" className="bg-green-500">Ready</Badge>}
-          {isServerHealthy === false && <Badge variant="secondary">Offline (Upload still available)</Badge>}
-        </AlertDescription>
-      </Alert>
-
       {/* File Upload Area */}
       <Card>
         <CardHeader>
@@ -253,7 +229,7 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
                   Supports: Excel, PDF, Word, Audio files (MP3, WAV)
                 </p>
                 <p className="text-xs text-gray-400 mt-1">
-                  Max {maxFiles} files • Files will be uploaded immediately
+                  Max {maxFiles} files • Files will be uploaded immediately to library
                 </p>
               </div>
             )}

@@ -170,9 +170,9 @@ export default function DealWorkspace() {
               <h4 className="text-md font-medium mb-3">Upload New Documents</h4>
               <AIFileUpload 
                 dealId={deal.id}
-                onProcessingComplete={(results) => {
-                  console.log('Processing completed:', results);
-                  toast.success(`Successfully processed ${results.length} files`);
+                onUploadComplete={(results) => {
+                  console.log('Upload completed:', results);
+                  toast.success(`Successfully uploaded ${results.length} files`);
                   handleDocumentUpdate();
                 }}
                 maxFiles={10}

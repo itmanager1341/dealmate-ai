@@ -28,7 +28,7 @@ export interface Document {
   created_at: string;
   uploaded_at: string;
   processed: boolean;
-  classification?: string;
+  classified_as?: string;
 }
 
 export interface DealMetric {
