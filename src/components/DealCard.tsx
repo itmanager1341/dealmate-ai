@@ -53,8 +53,8 @@ export function DealCard({ deal, className }: DealCardProps) {
       </CardContent>
       <CardFooter className="p-4 pt-0">
         <Button asChild className="w-full" variant="secondary">
-          <Link to={`/deal/${deal.id}`}>
-            Open Workspace
+          <Link to={`/deal/${deal.id}/details`}>
+            Open Deal Details
           </Link>
         </Button>
       </CardFooter>
