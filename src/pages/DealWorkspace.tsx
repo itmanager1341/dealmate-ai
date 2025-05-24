@@ -1,12 +1,15 @@
+
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { supabase } from "@/lib/supabase";
 import { Deal } from "@/types";
 import { toast } from "sonner";
-import { File, FileText, MessageSquare, BarChart2, FileQuestion, FileEdit } from "lucide-react";
+import { File, FileText, MessageSquare, BarChart2, FileQuestion, FileEdit, ChevronLeft } from "lucide-react";
+import AIFileUpload from "@/components/AIFileUpload";
 
 export default function DealWorkspace() {
   const { id } = useParams<{ id: string }>();
@@ -18,12 +21,10 @@ export default function DealWorkspace() {
   useEffect(() => {
     const fetchDeal = async () => {
       if (!id) {
-        // If no ID provided, redirect to dashboard
         navigate("/dashboard");
         return;
       }
 
-      // Check if ID is a valid UUID format
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(id)) {
         console.error("Invalid deal ID format:", id);
@@ -71,7 +72,7 @@ export default function DealWorkspace() {
           <h2 className="text-xl font-semibold mb-2">Deal not found</h2>
           <p className="text-muted-foreground mb-4">The deal you're looking for doesn't exist or you don't have access to it.</p>
           <Button asChild>
-            <a href="/dashboard">Return to Dashboard</a>
+            <Link to="/dashboard">Return to Dashboard</Link>
           </Button>
         </div>
       </div>
@@ -80,8 +81,34 @@ export default function DealWorkspace() {
 
   return (
     <div className="dealmate-content pb-0">
+      {/* Breadcrumb Navigation */}
+      <div className="mb-4">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link to="/dashboard">Dashboard</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{deal.name}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+      </div>
+
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Button variant="ghost" size="sm" asChild>
+              <Link to="/dashboard">
+                <ChevronLeft className="h-4 w-4 mr-1" />
+                Back to Dashboard
+              </Link>
+            </Button>
+          </div>
           <h1 className="text-2xl font-bold">{deal.name}</h1>
           <p className="text-muted-foreground">{deal.company_name} {deal.industry ? `• ${deal.industry}` : ''}</p>
         </div>
@@ -120,12 +147,19 @@ export default function DealWorkspace() {
         
         <div className="border rounded-md min-h-[calc(100vh-240px)]">
           <TabsContent value="documents" className="p-4 m-0">
-            <div className="text-center py-12">
-              <FileQuestion className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-1">No documents yet</h3>
-              <p className="text-sm text-muted-foreground mb-4">Upload documents to start the analysis</p>
-              <Button>Upload Documents</Button>
+            <div className="mb-6">
+              <h3 className="text-lg font-medium mb-2">Document Management</h3>
+              <p className="text-sm text-muted-foreground mb-4">Upload and manage documents for deal analysis</p>
             </div>
+            
+            <AIFileUpload 
+              dealId={deal.id}
+              onProcessingComplete={(results) => {
+                console.log('Processing completed:', results);
+                toast.success(`Successfully processed ${results.length} files`);
+              }}
+              maxFiles={10}
+            />
           </TabsContent>
           
           <TabsContent value="transcripts" className="p-4 m-0">

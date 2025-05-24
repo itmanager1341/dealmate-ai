@@ -9,7 +9,6 @@ import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import Upload from "./pages/Upload";
 import DealWorkspace from "./pages/DealWorkspace";
-import DealDetailPage from "./pages/DealDetailPage";
 import Compare from "./pages/Compare";
 import Archive from "./pages/Archive";
 import Login from "./pages/Login";
@@ -34,7 +33,6 @@ const App = () => (
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/upload" element={<Upload />} />
             <Route path="/deal/:id" element={<DealWorkspace />} />
-            <Route path="/deal/:id/details" element={<DealDetailPage />} />
             <Route path="/compare" element={<Compare />} />
             <Route path="/archive" element={<Archive />} />
           </Route>
