@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,10 +23,11 @@ import {
   Loader,
   CheckCircle,
   XCircle,
-  Zap
+  Zap,
+  Award
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { processFile, checkAIServerHealth } from "../utils/aiApi";
+import { processFile, processCIM, checkAIServerHealth } from "../utils/aiApi";
 
 interface DocumentLibraryProps {
   dealId: string;
@@ -38,6 +40,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
   const [processingDocs, setProcessingDocs] = useState<Set<string>>(new Set());
+  const [processingCIMDocs, setProcessingCIMDocs] = useState<Set<string>>(new Set());
   const [isServerHealthy, setIsServerHealthy] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -120,6 +123,25 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
     }
   };
 
+  const isPotentialCIM = (document: Document): boolean => {
+    const fileName = document.name || document.file_name || '';
+    const fileSize = document.size || 0;
+    
+    // Check if it's a PDF
+    if (document.file_type !== 'pdf') return false;
+    
+    // Check for CIM keywords in filename
+    const cimKeywords = ['cim', 'confidential information memorandum', 'investment memo', 'offering memo'];
+    const hasKeyword = cimKeywords.some(keyword => 
+      fileName.toLowerCase().includes(keyword)
+    );
+    
+    // Check file size (typical CIMs are > 2MB)
+    const isLargeEnough = fileSize > 2 * 1024 * 1024; // 2MB
+    
+    return hasKeyword || isLargeEnough;
+  };
+
   const processDocument = async (document: Document) => {
     if (!isServerHealthy) {
       toast.error("AI server is not available");
@@ -197,6 +219,83 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
     }
   };
 
+  const processCIMDocument = async (document: Document) => {
+    if (!isServerHealthy) {
+      toast.error("AI server is not available");
+      return;
+    }
+
+    const documentId = document.id;
+    setProcessingCIMDocs(prev => new Set(prev).add(documentId));
+
+    try {
+      const storageFilePath = document.file_path || document.storage_path;
+      if (!storageFilePath) {
+        throw new Error("No file path found for document");
+      }
+
+      console.log(`Starting CIM processing for document: ${document.name || document.file_name}`);
+      
+      // Download the file from storage
+      const { data: fileData, error: downloadError } = await supabase.storage
+        .from('documents')
+        .download(storageFilePath);
+
+      if (downloadError) {
+        console.error("Error downloading file:", downloadError);
+        throw downloadError;
+      }
+
+      const fileName = document.name || document.file_name || 'unknown';
+      const file = new File([fileData], fileName, { 
+        type: getFileTypeFromExtension(document.file_type) 
+      });
+
+      console.log(`Processing CIM file: ${fileName} (${file.size} bytes)`);
+      
+      // Call CIM processing with document ID to enable data storage
+      const result = await processCIM(file, dealId, documentId);
+      
+      if (result.success) {
+        console.log(`CIM processing successful for ${fileName}:`, result.data);
+        
+        // Update document as processed in database
+        const { error: updateError } = await supabase
+          .from('documents')
+          .update({ 
+            processed: true,
+            classified_as: 'CIM Analysis'
+          })
+          .eq('id', documentId);
+
+        if (updateError) {
+          console.error("Error updating document status:", updateError);
+          throw updateError;
+        }
+
+        toast.success(`Successfully processed CIM ${fileName} - Investment analysis complete`);
+        
+        // Refresh documents list
+        fetchDocuments();
+        onDocumentUpdate?.();
+        
+      } else {
+        console.error(`CIM processing failed for ${fileName}:`, result.error);
+        throw new Error(result.error || 'CIM processing failed');
+      }
+      
+    } catch (error) {
+      console.error(`Error processing CIM ${document.name || document.file_name}:`, error);
+      toast.error(`Failed to process CIM ${document.name || document.file_name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setProcessingCIMDocs(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(documentId);
+        return newSet;
+      });
+    }
+  };
+
   const processSelectedDocuments = async () => {
     if (selectedDocs.size === 0) {
       toast.error("Please select documents to process");
@@ -244,10 +343,15 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
     }
   };
 
-  const getStatusBadge = (processed: boolean, isProcessing: boolean) => {
+  const getStatusBadge = (processed: boolean, isProcessing: boolean, classified_as?: string) => {
     if (isProcessing) {
       return <Badge variant="secondary"><Loader className="h-3 w-3 mr-1 animate-spin" />Processing</Badge>;
     }
+    
+    if (classified_as === 'CIM Analysis') {
+      return <Badge className="bg-purple-500 text-white"><Award className="h-3 w-3 mr-1" />CIM</Badge>;
+    }
+    
     return (
       <Badge variant={processed ? "default" : "secondary"}>
         {processed ? "Processed" : "Ready"}
@@ -367,8 +471,10 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
             <TableBody>
               {filteredDocuments.map((document) => {
                 const isProcessing = processingDocs.has(document.id);
+                const isProcessingCIM = processingCIMDocs.has(document.id);
                 const displayName = document.name || document.file_name || 'Unknown';
                 const filePath = document.file_path || document.storage_path || '';
+                const potentialCIM = isPotentialCIM(document);
                 
                 return (
                   <TableRow key={document.id}>
@@ -383,11 +489,18 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
                         {getFileIcon(document.file_type)}
                         <div>
                           <p className="font-medium">{displayName}</p>
-                          {document.classified_as && (
-                            <p className="text-sm text-muted-foreground">
-                              {document.classified_as}
-                            </p>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {document.classified_as && (
+                              <p className="text-sm text-muted-foreground">
+                                {document.classified_as}
+                              </p>
+                            )}
+                            {potentialCIM && document.classified_as !== 'CIM Analysis' && (
+                              <Badge variant="outline" className="text-xs">
+                                Potential CIM
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </TableCell>
@@ -400,7 +513,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
                       {document.size ? `${(document.size / 1024 / 1024).toFixed(2)} MB` : 'Unknown'}
                     </TableCell>
                     <TableCell>
-                      {getStatusBadge(document.processed, isProcessing)}
+                      {getStatusBadge(document.processed, isProcessing || isProcessingCIM, document.classified_as)}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -410,6 +523,21 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
+                        {!document.processed && potentialCIM && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => processCIMDocument(document)}
+                            disabled={isProcessingCIM || !isServerHealthy}
+                            title="Process as CIM"
+                          >
+                            {isProcessingCIM ? (
+                              <Loader className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Award className="h-4 w-4 text-purple-500" />
+                            )}
+                          </Button>
+                        )}
                         {!document.processed && (
                           <Button
                             variant="ghost"

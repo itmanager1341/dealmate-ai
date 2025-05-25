@@ -82,6 +82,32 @@ async function storeProcessingResults(
       console.log('Successfully stored AI output');
     }
 
+    // Store CIM-specific data
+    if (processingMethod === 'cim' && aiResponse) {
+      const { error: cimError } = await supabase
+        .from('cim_analysis')
+        .insert({
+          deal_id: dealId,
+          document_id: documentId,
+          investment_grade: aiResponse.investment_grade || 'Not Rated',
+          executive_summary: aiResponse.executive_summary,
+          business_model: aiResponse.business_model,
+          financial_metrics: aiResponse.financial_metrics,
+          key_risks: aiResponse.key_risks,
+          investment_highlights: aiResponse.investment_highlights || [],
+          management_questions: aiResponse.management_questions || [],
+          competitive_position: aiResponse.competitive_position,
+          recommendation: aiResponse.recommendation,
+          raw_ai_response: aiResponse
+        });
+
+      if (cimError) {
+        console.error('Error storing CIM analysis:', cimError);
+      } else {
+        console.log('Successfully stored CIM analysis');
+      }
+    }
+
     // Store specific data based on processing method
     if (processingMethod === 'excel' && aiResponse) {
       // Handle Excel data - create chunks from the raw data and analysis
@@ -369,6 +395,43 @@ export async function processDocument(file: File, dealId: string, documentId?: s
     };
   } catch (error) {
     console.error('Document processing failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+// Process CIM documents for investment analysis
+export async function processCIM(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('deal_id', dealId);
+
+    const response = await fetch(`${AI_SERVER_URL}/process-cim`, {
+      method: 'POST',
+      body: formData,
+      mode: 'cors',
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    // Store results in database if documentId is provided
+    if (documentId) {
+      await storeProcessingResults(file, dealId, documentId, data, 'cim');
+    }
+
+    return {
+      success: true,
+      data: data
+    };
+  } catch (error) {
+    console.error('CIM processing failed:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'

@@ -8,12 +8,13 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { supabase } from "@/lib/supabase";
 import { Deal } from "@/types";
 import { toast } from "sonner";
-import { File, FileText, MessageSquare, BarChart2, FileQuestion, FileEdit, ChevronLeft } from "lucide-react";
+import { File, FileText, MessageSquare, BarChart2, FileQuestion, FileEdit, ChevronLeft, Award } from "lucide-react";
 import AIFileUpload from "@/components/AIFileUpload";
 import { DocumentLibrary } from "@/components/DocumentLibrary";
 import { ExcelChunksView } from "@/components/ExcelChunksView";
 import { TranscriptsView } from "@/components/TranscriptsView";
 import { MetricsView } from "@/components/MetricsView";
+import { CIMAnalysisDisplay } from "@/components/CIMAnalysisDisplay";
 
 export default function DealWorkspace() {
   const { id } = useParams<{ id: string }>();
@@ -22,6 +23,7 @@ export default function DealWorkspace() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("documents");
   const [documentUpdateTrigger, setDocumentUpdateTrigger] = useState(0);
+  const [hasCIMAnalysis, setHasCIMAnalysis] = useState(false);
 
   useEffect(() => {
     const fetchDeal = async () => {
@@ -50,6 +52,9 @@ export default function DealWorkspace() {
         }
         
         setDeal(data);
+        
+        // Check if this deal has CIM analysis
+        checkForCIMAnalysis(id);
       } catch (error: any) {
         console.error("Error fetching deal:", error);
         toast.error("Failed to load deal details");
@@ -62,8 +67,31 @@ export default function DealWorkspace() {
     fetchDeal();
   }, [id, navigate]);
 
+  const checkForCIMAnalysis = async (dealId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('cim_analysis')
+        .select('id')
+        .eq('deal_id', dealId)
+        .limit(1);
+
+      if (error) {
+        console.error("Error checking for CIM analysis:", error);
+        return;
+      }
+
+      setHasCIMAnalysis(data && data.length > 0);
+    } catch (error) {
+      console.error("Error checking for CIM analysis:", error);
+    }
+  };
+
   const handleDocumentUpdate = () => {
     setDocumentUpdateTrigger(prev => prev + 1);
+    // Re-check for CIM analysis when documents are updated
+    if (deal?.id) {
+      checkForCIMAnalysis(deal.id);
+    }
   };
 
   if (loading) {
@@ -132,6 +160,12 @@ export default function DealWorkspace() {
             <File className="h-4 w-4 mr-2" />
             <span>Documents</span>
           </TabsTrigger>
+          {hasCIMAnalysis && (
+            <TabsTrigger value="cim-analysis" className="flex items-center">
+              <Award className="h-4 w-4 mr-2" />
+              <span>CIM Analysis</span>
+            </TabsTrigger>
+          )}
           <TabsTrigger value="transcripts" className="flex items-center">
             <FileText className="h-4 w-4 mr-2" />
             <span>Transcripts</span>
@@ -180,6 +214,16 @@ export default function DealWorkspace() {
               />
             </div>
           </TabsContent>
+
+          {hasCIMAnalysis && (
+            <TabsContent value="cim-analysis" className="p-4 m-0">
+              <div className="mb-6">
+                <h3 className="text-lg font-medium mb-2">CIM Investment Analysis</h3>
+                <p className="text-sm text-muted-foreground mb-4">AI-powered investment analysis of Confidential Information Memorandum</p>
+              </div>
+              <CIMAnalysisDisplay dealId={deal.id} />
+            </TabsContent>
+          )}
           
           <TabsContent value="transcripts" className="p-4 m-0">
             <TranscriptsView dealId={deal.id} />

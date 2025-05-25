@@ -107,6 +107,75 @@ export type Database = {
           },
         ]
       }
+      cim_analysis: {
+        Row: {
+          business_model: Json | null
+          competitive_position: Json | null
+          created_at: string
+          deal_id: string
+          document_id: string | null
+          executive_summary: string | null
+          financial_metrics: Json | null
+          id: string
+          investment_grade: string
+          investment_highlights: string[] | null
+          key_risks: Json | null
+          management_questions: string[] | null
+          raw_ai_response: Json | null
+          recommendation: Json | null
+          updated_at: string
+        }
+        Insert: {
+          business_model?: Json | null
+          competitive_position?: Json | null
+          created_at?: string
+          deal_id: string
+          document_id?: string | null
+          executive_summary?: string | null
+          financial_metrics?: Json | null
+          id?: string
+          investment_grade: string
+          investment_highlights?: string[] | null
+          key_risks?: Json | null
+          management_questions?: string[] | null
+          raw_ai_response?: Json | null
+          recommendation?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          business_model?: Json | null
+          competitive_position?: Json | null
+          created_at?: string
+          deal_id?: string
+          document_id?: string | null
+          executive_summary?: string | null
+          financial_metrics?: Json | null
+          id?: string
+          investment_grade?: string
+          investment_highlights?: string[] | null
+          key_risks?: Json | null
+          management_questions?: string[] | null
+          raw_ai_response?: Json | null
+          recommendation?: Json | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_cim_analysis_deal_id"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_cim_analysis_document_id"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       comparisons: {
         Row: {
           comparison_json: Json | null
