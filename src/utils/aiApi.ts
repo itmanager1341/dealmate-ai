@@ -1,4 +1,4 @@
-// AI API Integration for DealMate Frontend
+// AI API Integration for DealMate Frontend - Updated with CIM Processing
 
 import { supabase } from '@/lib/supabase';
 
@@ -9,6 +9,54 @@ export interface AIResponse {
   data?: any;
   error?: string;
   processing_time?: number;
+}
+
+// CIM Analysis interfaces based on your API documentation
+export interface CIMAnalysisResult {
+  investment_grade: string; // A+ to F rating
+  executive_summary: string;
+  business_model: {
+    type: string;
+    revenue_streams: string[];
+    key_value_propositions: string[];
+  };
+  financial_metrics: {
+    revenue_cagr: string;
+    ebitda_margin: string;
+    deal_size_estimate: string;
+    revenue_multiple: string;
+    ebitda_multiple: string;
+  };
+  key_risks: Array<{
+    risk: string;
+    severity: 'High' | 'Medium' | 'Low';
+    impact: string;
+  }>;
+  investment_highlights: string[];
+  management_questions: string[];
+  competitive_position: {
+    strengths: string[];
+    weaknesses: string[];
+    market_position: string;
+  };
+  recommendation: {
+    action: 'Pursue' | 'Pass' | 'More Info Needed';
+    rationale: string;
+  };
+}
+
+// Backend response structure based on your API documentation
+export interface CIMProcessingResponse {
+  success: boolean;
+  deal_id: string;
+  filename: string;
+  document_type: string;
+  page_count: number;
+  text_length: number;
+  ai_analysis: string; // JSON string that needs parsing
+  processing_time: string;
+  analysis_type: string;
+  error?: string;
 }
 
 export interface DealFile {
@@ -38,8 +86,6 @@ export async function checkAIServerHealth(): Promise<boolean> {
     
     if (!response.ok) {
       console.error('AI server health check failed with status:', response.status);
-      const errorText = await response.text();
-      console.error('Error response body:', errorText);
       return false;
     }
     
@@ -61,10 +107,9 @@ async function storeProcessingResults(
   processingMethod: string
 ): Promise<void> {
   console.log('Storing processing results for:', file.name, 'Method:', processingMethod);
-  console.log('AI Response data structure:', JSON.stringify(aiResponse, null, 2));
   
   try {
-    // Store in ai_outputs table
+    // Store in ai_outputs table for audit trail
     const { error: aiOutputError } = await supabase
       .from('ai_outputs')
       .insert({
@@ -82,7 +127,7 @@ async function storeProcessingResults(
       console.log('Successfully stored AI output');
     }
 
-    // Store CIM-specific data
+    // Store CIM-specific data in cim_analysis table
     if (processingMethod === 'cim' && aiResponse) {
       const { error: cimError } = await supabase
         .from('cim_analysis')
@@ -108,12 +153,11 @@ async function storeProcessingResults(
       }
     }
 
-    // Store specific data based on processing method
+    // Store specific data based on processing method (keep existing logic)
     if (processingMethod === 'excel' && aiResponse) {
       // Handle Excel data - create chunks from the raw data and analysis
       console.log('Processing Excel data for chunks...');
       
-      // Create a chunk for the raw data preview if available
       if (aiResponse.raw_data_preview) {
         const { error: chunkError } = await supabase
           .from('xlsx_chunks')
@@ -127,19 +171,15 @@ async function storeProcessingResults(
 
         if (chunkError) {
           console.error('Error storing raw data chunk:', chunkError);
-        } else {
-          console.log('Successfully stored raw data chunk');
         }
       }
 
-      // Create chunks from AI analysis if available
+      // Process AI analysis for Excel files
       if (aiResponse.ai_analysis) {
         try {
-          // Try to parse the AI analysis JSON
           const analysisText = aiResponse.ai_analysis;
           let analysisData = null;
           
-          // Extract JSON from the analysis text
           const jsonMatch = analysisText.match(/```json\n([\s\S]*?)\n```/);
           if (jsonMatch) {
             analysisData = JSON.parse(jsonMatch[1]);
@@ -158,53 +198,25 @@ async function storeProcessingResults(
 
             if (analysisChunkError) {
               console.error('Error storing analysis chunk:', analysisChunkError);
-            } else {
-              console.log('Successfully stored analysis chunk');
             }
 
-            // Extract and store metrics
+            // Extract and store metrics from Excel analysis
             if (analysisData.financial_metrics.revenue) {
               for (const [period, value] of Object.entries(analysisData.financial_metrics.revenue)) {
                 if (value !== null && typeof value === 'number') {
-                  const { error: metricError } = await supabase
-                    .from('deal_metrics')
-                    .insert({
-                      deal_id: dealId,
-                      metric_name: `Revenue ${period}`,
-                      metric_value: value,
-                      metric_unit: '$',
-                      pinned: false
-                    });
-
-                  if (metricError) {
-                    console.error('Error storing revenue metric:', metricError);
-                  }
-                }
-              }
-            }
-
-            if (analysisData.financial_metrics.growth_rate) {
-              for (const [period, value] of Object.entries(analysisData.financial_metrics.growth_rate)) {
-                if (value !== null && typeof value === 'number') {
-                  const { error: metricError } = await supabase
-                    .from('deal_metrics')
-                    .insert({
-                      deal_id: dealId,
-                      metric_name: `Growth Rate ${period}`,
-                      metric_value: value,
-                      metric_unit: '%',
-                      pinned: false
-                    });
-
-                  if (metricError) {
-                    console.error('Error storing growth metric:', metricError);
-                  }
+                  await supabase.from('deal_metrics').insert({
+                    deal_id: dealId,
+                    metric_name: `Revenue ${period}`,
+                    metric_value: value,
+                    metric_unit: '$',
+                    pinned: false
+                  });
                 }
               }
             }
           }
         } catch (parseError) {
-          console.error('Error parsing AI analysis:', parseError);
+          console.error('Error parsing Excel AI analysis:', parseError);
         }
       }
     }
@@ -220,78 +232,152 @@ async function storeProcessingResults(
 
       if (transcriptError) {
         console.error('Error storing transcript:', transcriptError);
-      } else {
-        console.log('Successfully stored transcript');
       }
     }
 
-    // Extract and store metrics if available (general metrics extraction)
+    // Extract and store general metrics if available
     if (aiResponse.metrics && Array.isArray(aiResponse.metrics)) {
       for (const metric of aiResponse.metrics) {
-        const { error: metricError } = await supabase
-          .from('deal_metrics')
-          .insert({
-            deal_id: dealId,
-            metric_name: metric.name,
-            metric_value: metric.value,
-            metric_unit: metric.unit || '',
-            pinned: false
-          });
-
-        if (metricError) {
-          console.error('Error storing metric:', metricError);
-        }
+        await supabase.from('deal_metrics').insert({
+          deal_id: dealId,
+          metric_name: metric.name,
+          metric_value: metric.value,
+          metric_unit: metric.unit || '',
+          pinned: false
+        });
       }
-      console.log('Successfully stored metrics');
     }
 
     // Log the processing activity
-    const { error: logError } = await supabase
-      .from('agent_logs')
-      .insert({
-        agent_name: `${processingMethod}_processor`,
-        status: 'success',
-        input_payload: {
-          file_name: file.name,
-          file_size: file.size,
-          deal_id: dealId,
-          document_id: documentId
-        },
-        output_payload: aiResponse
-      });
-
-    if (logError) {
-      console.error('Error storing agent log:', logError);
-    } else {
-      console.log('Successfully stored agent log');
-    }
+    await supabase.from('agent_logs').insert({
+      agent_name: `${processingMethod}_processor`,
+      status: 'success',
+      input_payload: {
+        file_name: file.name,
+        file_size: file.size,
+        deal_id: dealId,
+        document_id: documentId
+      },
+      output_payload: aiResponse
+    });
 
   } catch (error) {
     console.error('Error in storeProcessingResults:', error);
     
     // Log the error
-    const { error: errorLogError } = await supabase
-      .from('agent_logs')
-      .insert({
-        agent_name: `${processingMethod}_processor`,
-        status: 'error',
-        error_message: error instanceof Error ? error.message : 'Unknown error',
-        input_payload: {
-          file_name: file.name,
-          file_size: file.size,
-          deal_id: dealId,
-          document_id: documentId
-        },
-        output_payload: null
-      });
-
-    if (errorLogError) {
-      console.error('Error storing error log:', errorLogError);
-    }
+    await supabase.from('agent_logs').insert({
+      agent_name: `${processingMethod}_processor`,
+      status: 'error',
+      error_message: error instanceof Error ? error.message : 'Unknown error',
+      input_payload: {
+        file_name: file.name,
+        file_size: file.size,
+        deal_id: dealId,
+        document_id: documentId
+      },
+      output_payload: null
+    });
   }
 }
 
-// Transcribe audio files (MP3, WAV)
+// Process CIM documents for investment analysis
+export async function processCIM(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
+  try {
+    console.log(`Starting CIM processing for ${file.name}`);
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('deal_id', dealId);
+    if (documentId) {
+      formData.append('document_id', documentId);
+    }
+
+    const response = await fetch(`${AI_SERVER_URL}/process-cim`, {
+      method: 'POST',
+      body: formData,
+      mode: 'cors',
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const result: CIMProcessingResponse = await response.json();
+    
+    if (!result.success) {
+      throw new Error(result.error || 'CIM processing failed');
+    }
+
+    // Parse the AI analysis JSON string from your backend
+    let analysisData: CIMAnalysisResult;
+    try {
+      analysisData = JSON.parse(result.ai_analysis);
+    } catch (parseError) {
+      console.error('Error parsing CIM analysis JSON:', parseError);
+      throw new Error('Failed to parse CIM analysis data');
+    }
+
+    // Store results in database if documentId is provided
+    if (documentId) {
+      await storeProcessingResults(file, dealId, documentId, analysisData, 'cim');
+    }
+
+    console.log(`CIM processing successful for ${file.name}`);
+    
+    return {
+      success: true,
+      data: {
+        ...result,
+        parsed_analysis: analysisData // Include parsed analysis
+      },
+      processing_time: parseFloat(result.processing_time) || 0
+    };
+    
+  } catch (error) {
+    console.error('CIM processing failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
+  }
+}
+
+// Validate CIM file before processing
+export function validateCIMFile(file: File): { isValid: boolean; message: string } {
+  // Check file type
+  if (file.type !== 'application/pdf') {
+    return {
+      isValid: false,
+      message: 'Only PDF files are supported for CIM analysis'
+    };
+  }
+
+  // Check file size (limit: 50MB, minimum: 1MB for meaningful CIMs)
+  const maxSize = 50 * 1024 * 1024; // 50MB
+  const minSize = 1 * 1024 * 1024;  // 1MB
+  
+  if (file.size > maxSize) {
+    return {
+      isValid: false,
+      message: 'File size must be less than 50MB'
+    };
+  }
+  
+  if (file.size < minSize) {
+    return {
+      isValid: false,
+      message: 'File appears too small to be a comprehensive CIM (minimum 1MB)'
+    };
+  }
+
+  return {
+    isValid: true,
+    message: 'CIM file validation passed'
+  };
+}
+
+// Transcribe audio files (MP3, WAV) - keep existing
 export async function transcribeAudio(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
     const formData = new FormData();
@@ -310,7 +396,6 @@ export async function transcribeAudio(file: File, dealId: string, documentId?: s
 
     const data = await response.json();
     
-    // Store results in database if documentId is provided
     if (documentId) {
       await storeProcessingResults(file, dealId, documentId, data, 'audio');
     }
@@ -328,7 +413,7 @@ export async function transcribeAudio(file: File, dealId: string, documentId?: s
   }
 }
 
-// Process Excel files for financial metrics
+// Process Excel files for financial metrics - keep existing
 export async function processExcel(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
     const formData = new FormData();
@@ -347,7 +432,6 @@ export async function processExcel(file: File, dealId: string, documentId?: stri
 
     const data = await response.json();
     
-    // Store results in database if documentId is provided
     if (documentId) {
       await storeProcessingResults(file, dealId, documentId, data, 'excel');
     }
@@ -365,7 +449,7 @@ export async function processExcel(file: File, dealId: string, documentId?: stri
   }
 }
 
-// Process documents (PDF, DOCX) for business analysis
+// Process documents (PDF, DOCX) for business analysis - keep existing
 export async function processDocument(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
     const formData = new FormData();
@@ -384,7 +468,6 @@ export async function processDocument(file: File, dealId: string, documentId?: s
 
     const data = await response.json();
     
-    // Store results in database if documentId is provided
     if (documentId) {
       await storeProcessingResults(file, dealId, documentId, data, 'document');
     }
@@ -402,44 +485,7 @@ export async function processDocument(file: File, dealId: string, documentId?: s
   }
 }
 
-// Process CIM documents for investment analysis
-export async function processCIM(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('deal_id', dealId);
-
-    const response = await fetch(`${AI_SERVER_URL}/process-cim`, {
-      method: 'POST',
-      body: formData,
-      mode: 'cors',
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    // Store results in database if documentId is provided
-    if (documentId) {
-      await storeProcessingResults(file, dealId, documentId, data, 'cim');
-    }
-
-    return {
-      success: true,
-      data: data
-    };
-  } catch (error) {
-    console.error('CIM processing failed:', error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
-    };
-  }
-}
-
-// Generate investment memo from processed data
+// Generate investment memo from processed data - keep existing
 export async function generateMemo(dealId: string, requestedSections?: string[]): Promise<AIResponse> {
   try {
     const response = await fetch(`${AI_SERVER_URL}/generate-memo`, {
@@ -472,7 +518,7 @@ export async function generateMemo(dealId: string, requestedSections?: string[])
   }
 }
 
-// Utility function to determine file processing method
+// Utility function to determine file processing method - keep existing
 export function getProcessingMethod(fileName: string): 'audio' | 'excel' | 'document' | 'unknown' {
   const extension = fileName.toLowerCase().split('.').pop();
   
@@ -494,7 +540,7 @@ export function getProcessingMethod(fileName: string): 'audio' | 'excel' | 'docu
   }
 }
 
-// Main file processing orchestrator
+// Main file processing orchestrator - keep existing
 export async function processFile(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   const processingMethod = getProcessingMethod(file.name);
   
@@ -513,7 +559,7 @@ export async function processFile(file: File, dealId: string, documentId?: strin
   }
 }
 
-// Processing status checker (for long-running operations)
+// Processing status checker (for long-running operations) - keep existing
 export async function checkProcessingStatus(jobId: string): Promise<AIResponse> {
   try {
     const response = await fetch(`${AI_SERVER_URL}/status/${jobId}`, {
