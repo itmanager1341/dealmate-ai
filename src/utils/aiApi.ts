@@ -1,4 +1,4 @@
-// AI API Integration for DealMate Frontend - Updated with CIM Processing
+// AI API Integration for DealMate Frontend - Hybrid Enhanced Version
 
 import { supabase } from '@/lib/supabase';
 
@@ -11,7 +11,7 @@ export interface AIResponse {
   processing_time?: number;
 }
 
-// CIM Analysis interfaces based on your API documentation
+// Enhanced CIM Analysis interfaces
 export interface CIMAnalysisResult {
   investment_grade: string; // A+ to F rating
   executive_summary: string;
@@ -67,8 +67,96 @@ export interface DealFile {
   deal_id: string;
 }
 
-// Health check for AI server
+// Enhanced CIM file validation with comprehensive checks
+export function validateCIMFile(file: File): { isValid: boolean; message: string; confidence?: number } {
+  console.log(`Validating CIM file: ${file.name} (${file.size} bytes, ${file.type})`);
+  
+  // Check file type
+  if (file.type !== 'application/pdf') {
+    return {
+      isValid: false,
+      message: 'Only PDF files are supported for CIM analysis',
+      confidence: 0
+    };
+  }
+
+  // Check file size (limit: 50MB, minimum: 1MB for meaningful CIMs)
+  const maxSize = 50 * 1024 * 1024; // 50MB
+  const minSize = 1 * 1024 * 1024;  // 1MB
+  
+  if (file.size > maxSize) {
+    return {
+      isValid: false,
+      message: 'File size must be less than 50MB',
+      confidence: 0
+    };
+  }
+  
+  if (file.size < minSize) {
+    return {
+      isValid: false,
+      message: 'File appears too small to be a comprehensive CIM (minimum 1MB)',
+      confidence: 0
+    };
+  }
+
+  // Enhanced CIM keyword detection with confidence scoring
+  const fileName = file.name.toLowerCase();
+  const strongCimKeywords = ['cim', 'confidential information memorandum', 'investment memorandum'];
+  const mediumCimKeywords = ['memorandum', 'investment', 'offering', 'confidential'];
+  const weakCimKeywords = ['business', 'company', 'acquisition', 'private'];
+  
+  let confidence = 0;
+  let keywordMatches = [];
+  
+  // Strong indicators (high confidence)
+  for (const keyword of strongCimKeywords) {
+    if (fileName.includes(keyword)) {
+      confidence += 40;
+      keywordMatches.push(keyword);
+    }
+  }
+  
+  // Medium indicators
+  for (const keyword of mediumCimKeywords) {
+    if (fileName.includes(keyword)) {
+      confidence += 20;
+      keywordMatches.push(keyword);
+    }
+  }
+  
+  // Weak indicators
+  for (const keyword of weakCimKeywords) {
+    if (fileName.includes(keyword)) {
+      confidence += 10;
+      keywordMatches.push(keyword);
+    }
+  }
+  
+  // File size bonus (larger files more likely to be comprehensive CIMs)
+  if (file.size > 10 * 1024 * 1024) { // > 10MB
+    confidence += 15;
+  } else if (file.size > 5 * 1024 * 1024) { // > 5MB
+    confidence += 10;
+  }
+  
+  confidence = Math.min(confidence, 100); // Cap at 100%
+  
+  console.log(`CIM validation result: ${confidence}% confidence, keywords: [${keywordMatches.join(', ')}]`);
+  
+  return {
+    isValid: true,
+    message: `File validation passed (${confidence}% confidence as CIM)`,
+    confidence
+  };
+}
+
+// Health check for AI server with alias for consistency
 export async function checkAIServerHealth(): Promise<boolean> {
+  return await checkApiHealth();
+}
+
+export async function checkApiHealth(): Promise<boolean> {
   try {
     console.log('Checking AI server health at:', AI_SERVER_URL);
     
@@ -95,6 +183,113 @@ export async function checkAIServerHealth(): Promise<boolean> {
   } catch (error) {
     console.error('AI server health check failed:', error);
     return false;
+  }
+}
+
+// Enhanced CIM-specific storage function
+async function storeCIMAnalysis(
+  dealId: string, 
+  documentId: string, 
+  analysisData: CIMAnalysisResult, 
+  processingResponse: CIMProcessingResponse
+): Promise<void> {
+  console.log('Storing CIM analysis for deal:', dealId, 'document:', documentId);
+  
+  try {
+    // Store in cim_analysis table with enhanced data structure
+    const { error: cimError } = await supabase
+      .from('cim_analysis')
+      .insert({
+        deal_id: dealId,
+        document_id: documentId,
+        investment_grade: analysisData.investment_grade || 'Not Rated',
+        executive_summary: analysisData.executive_summary,
+        business_model: analysisData.business_model,
+        financial_metrics: analysisData.financial_metrics,
+        key_risks: analysisData.key_risks,
+        investment_highlights: analysisData.investment_highlights || [],
+        management_questions: analysisData.management_questions || [],
+        competitive_position: analysisData.competitive_position,
+        recommendation: analysisData.recommendation,
+        raw_ai_response: {
+          ...analysisData,
+          processing_metadata: {
+            filename: processingResponse.filename,
+            page_count: processingResponse.page_count,
+            text_length: processingResponse.text_length,
+            processing_time: processingResponse.processing_time,
+            analysis_type: processingResponse.analysis_type
+          }
+        }
+      });
+
+    if (cimError) {
+      console.error('Error storing CIM analysis:', cimError);
+      throw cimError;
+    }
+
+    console.log('Successfully stored CIM analysis in cim_analysis table');
+
+    // Store in ai_outputs table for comprehensive audit trail
+    const { error: aiOutputError } = await supabase
+      .from('ai_outputs')
+      .insert({
+        deal_id: dealId,
+        document_id: documentId,
+        agent_type: 'cim_analysis',
+        output_type: 'investment_analysis',
+        output_text: JSON.stringify(analysisData),
+        output_json: {
+          analysis: analysisData,
+          processing_response: processingResponse
+        }
+      });
+
+    if (aiOutputError) {
+      console.error('Error storing AI output:', aiOutputError);
+      throw aiOutputError;
+    }
+
+    console.log('Successfully stored CIM analysis in ai_outputs table');
+
+    // Log the processing activity with enhanced metadata
+    await supabase.from('agent_logs').insert({
+      agent_name: 'cim_analysis_processor',
+      status: 'success',
+      input_payload: {
+        deal_id: dealId,
+        document_id: documentId,
+        filename: processingResponse.filename,
+        page_count: processingResponse.page_count,
+        text_length: processingResponse.text_length
+      },
+      output_payload: {
+        investment_grade: analysisData.investment_grade,
+        recommendation: analysisData.recommendation?.action,
+        processing_time: processingResponse.processing_time,
+        analysis_type: processingResponse.analysis_type
+      }
+    });
+
+    console.log('CIM analysis processing logged successfully');
+
+  } catch (error) {
+    console.error('Error in storeCIMAnalysis:', error);
+    
+    // Log the error with detailed context
+    await supabase.from('agent_logs').insert({
+      agent_name: 'cim_analysis_processor',
+      status: 'error',
+      error_message: error instanceof Error ? error.message : 'Unknown error',
+      input_payload: {
+        deal_id: dealId,
+        document_id: documentId,
+        filename: processingResponse?.filename || 'unknown'
+      },
+      output_payload: null
+    });
+    
+    throw error;
   }
 }
 
@@ -283,7 +478,18 @@ async function storeProcessingResults(
 // Process CIM documents for investment analysis
 export async function processCIM(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
-    console.log(`Starting CIM processing for ${file.name}`);
+    console.log(`Starting enhanced CIM processing for ${file.name}`);
+    
+    // Enhanced validation with confidence scoring
+    const validation = validateCIMFile(file);
+    if (!validation.isValid) {
+      return {
+        success: false,
+        error: validation.message
+      };
+    }
+    
+    console.log(`CIM validation passed with ${validation.confidence}% confidence`);
     
     const formData = new FormData();
     formData.append('file', file);
@@ -318,63 +524,30 @@ export async function processCIM(file: File, dealId: string, documentId?: string
       throw new Error('Failed to parse CIM analysis data');
     }
 
-    // Store results in database if documentId is provided
+    // Store results using enhanced CIM-specific storage function
     if (documentId) {
-      await storeProcessingResults(file, dealId, documentId, analysisData, 'cim');
+      await storeCIMAnalysis(dealId, documentId, analysisData, result);
     }
 
-    console.log(`CIM processing successful for ${file.name}`);
+    console.log(`Enhanced CIM processing successful for ${file.name}`);
     
     return {
       success: true,
       data: {
         ...result,
-        parsed_analysis: analysisData // Include parsed analysis
+        parsed_analysis: analysisData,
+        validation_confidence: validation.confidence
       },
       processing_time: parseFloat(result.processing_time) || 0
     };
     
   } catch (error) {
-    console.error('CIM processing failed:', error);
+    console.error('Enhanced CIM processing failed:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred'
     };
   }
-}
-
-// Validate CIM file before processing
-export function validateCIMFile(file: File): { isValid: boolean; message: string } {
-  // Check file type
-  if (file.type !== 'application/pdf') {
-    return {
-      isValid: false,
-      message: 'Only PDF files are supported for CIM analysis'
-    };
-  }
-
-  // Check file size (limit: 50MB, minimum: 1MB for meaningful CIMs)
-  const maxSize = 50 * 1024 * 1024; // 50MB
-  const minSize = 1 * 1024 * 1024;  // 1MB
-  
-  if (file.size > maxSize) {
-    return {
-      isValid: false,
-      message: 'File size must be less than 50MB'
-    };
-  }
-  
-  if (file.size < minSize) {
-    return {
-      isValid: false,
-      message: 'File appears too small to be a comprehensive CIM (minimum 1MB)'
-    };
-  }
-
-  return {
-    isValid: true,
-    message: 'CIM file validation passed'
-  };
 }
 
 // Transcribe audio files (MP3, WAV) - keep existing
