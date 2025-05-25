@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,9 +31,10 @@ import { processFile, processCIM, checkAIServerHealth } from "../utils/aiApi";
 interface DocumentLibraryProps {
   dealId: string;
   onDocumentUpdate?: () => void;
+  onCIMAnalysisComplete?: (analysis: any) => void;
 }
 
-export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryProps) {
+export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplete }: DocumentLibraryProps) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -274,6 +274,11 @@ export function DocumentLibrary({ dealId, onDocumentUpdate }: DocumentLibraryPro
         }
 
         toast.success(`Successfully processed CIM ${fileName} - Investment analysis complete`);
+        
+        // Call the callback to notify parent component
+        if (onCIMAnalysisComplete && result.data) {
+          onCIMAnalysisComplete(result.data);
+        }
         
         // Refresh documents list
         fetchDocuments();
