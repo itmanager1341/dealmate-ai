@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/lib/supabase";
@@ -23,7 +24,9 @@ import {
   CheckCircle,
   XCircle,
   Zap,
-  Award
+  Award,
+  TrendingUp,
+  Star
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { processFile, processCIM, checkAIServerHealth } from "../utils/aiApi";
@@ -42,6 +45,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
   const [processingDocs, setProcessingDocs] = useState<Set<string>>(new Set());
   const [processingCIMDocs, setProcessingCIMDocs] = useState<Set<string>>(new Set());
   const [isServerHealthy, setIsServerHealthy] = useState<boolean | null>(null);
+  const [processingProgress, setProcessingProgress] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
     fetchDocuments();
@@ -71,6 +75,33 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
     } finally {
       setLoading(false);
     }
+  };
+
+  const simulateProgress = (documentId: string, isCompleted: (id: string) => boolean) => {
+    const interval = setInterval(() => {
+      setProcessingProgress(prev => {
+        const newMap = new Map(prev);
+        const current = newMap.get(documentId) || 0;
+        
+        if (isCompleted(documentId) || current >= 90) {
+          clearInterval(interval);
+          if (isCompleted(documentId)) {
+            newMap.set(documentId, 100);
+            setTimeout(() => {
+              setProcessingProgress(prev => {
+                const updated = new Map(prev);
+                updated.delete(documentId);
+                return updated;
+              });
+            }, 2000);
+          }
+          return newMap;
+        }
+        
+        newMap.set(documentId, Math.min(current + 15, 90));
+        return newMap;
+      });
+    }, 2000);
   };
 
   const handleDelete = async (documentId: string, filePath: string) => {
@@ -150,6 +181,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
 
     const documentId = document.id;
     setProcessingDocs(prev => new Set(prev).add(documentId));
+    simulateProgress(documentId, (id) => !processingDocs.has(id));
 
     try {
       const storageFilePath = document.file_path || document.storage_path;
@@ -227,6 +259,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
 
     const documentId = document.id;
     setProcessingCIMDocs(prev => new Set(prev).add(documentId));
+    simulateProgress(documentId, (id) => !processingCIMDocs.has(id));
 
     try {
       const storageFilePath = document.file_path || document.storage_path;
@@ -348,18 +381,45 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
     }
   };
 
-  const getStatusBadge = (processed: boolean, isProcessing: boolean, classified_as?: string) => {
-    if (isProcessing) {
-      return <Badge variant="secondary"><Loader className="h-3 w-3 mr-1 animate-spin" />Processing</Badge>;
+  const getStatusBadge = (processed: boolean, isProcessing: boolean, classified_as?: string, documentId?: string) => {
+    const progress = processingProgress.get(documentId || '');
+    
+    if (isProcessing && progress !== undefined) {
+      return (
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary" className="bg-blue-50 text-blue-700">
+            <Loader className="h-3 w-3 mr-1 animate-spin" />
+            Processing
+          </Badge>
+          <div className="flex items-center gap-1 min-w-[60px]">
+            <Progress value={progress} className="h-2 w-12" />
+            <span className="text-xs text-muted-foreground">{progress}%</span>
+          </div>
+        </div>
+      );
     }
     
     if (classified_as === 'CIM Analysis') {
-      return <Badge className="bg-purple-500 text-white"><Award className="h-3 w-3 mr-1" />CIM</Badge>;
+      return (
+        <Badge className="bg-gradient-to-r from-purple-500 to-pink-500 text-white border-0">
+          <Award className="h-3 w-3 mr-1" />
+          CIM Analyzed
+        </Badge>
+      );
+    }
+    
+    if (processed) {
+      return (
+        <Badge variant="default" className="bg-green-50 text-green-700 border-green-200">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Processed
+        </Badge>
+      );
     }
     
     return (
-      <Badge variant={processed ? "default" : "secondary"}>
-        {processed ? "Processed" : "Ready"}
+      <Badge variant="outline" className="text-muted-foreground">
+        Ready
       </Badge>
     );
   };
@@ -380,6 +440,9 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
   });
 
   const unprocessedCount = documents.filter(doc => !doc.processed).length;
+  const cimCount = documents.filter(doc => isPotentialCIM(doc)).length;
+  const processedCIMCount = documents.filter(doc => doc.classified_as === 'CIM Analysis').length;
+  const processingCount = processingDocs.size + processingCIMDocs.size;
 
   if (loading) {
     return (
@@ -394,195 +457,250 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Document Library ({documents.length})
-            {unprocessedCount > 0 && (
-              <Badge variant="secondary" className="ml-2">
-                {unprocessedCount} unprocessed
-              </Badge>
-            )}
-            {isServerHealthy !== null && (
-              <Badge variant={isServerHealthy ? "default" : "destructive"} className="ml-2">
-                AI Server: {isServerHealthy ? "Online" : "Offline"}
-              </Badge>
-            )}
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            {selectedDocs.size > 0 && (
-              <Button
-                onClick={processSelectedDocuments}
-                disabled={!isServerHealthy}
-                size="sm"
-                variant="outline"
-              >
-                <Brain className="h-4 w-4 mr-1" />
-                Process Selected ({selectedDocs.size})
-              </Button>
-            )}
-            <div className="flex items-center gap-2 max-w-sm">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search documents..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="max-w-xs"
-              />
+    <div className="space-y-6">
+      {/* CIM Analytics Dashboard - Only show if CIMs detected */}
+      {cimCount > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+            <CardContent className="p-4 text-center">
+              <div className="flex items-center justify-center mb-2">
+                <Brain className="h-5 w-5 text-purple-600" />
+              </div>
+              <p className="text-2xl font-bold text-purple-700">{cimCount}</p>
+              <p className="text-sm text-purple-600">CIMs Detected</p>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+            <CardContent className="p-4 text-center">
+              <div className="flex items-center justify-center mb-2">
+                <Zap className="h-5 w-5 text-blue-600" />
+              </div>
+              <p className="text-2xl font-bold text-blue-700">{processingCount}</p>
+              <p className="text-sm text-blue-600">Processing</p>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+            <CardContent className="p-4 text-center">
+              <div className="flex items-center justify-center mb-2">
+                <Star className="h-5 w-5 text-green-600" />
+              </div>
+              <p className="text-2xl font-bold text-green-700">{processedCIMCount}</p>
+              <p className="text-sm text-green-600">Analyzed</p>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+            <CardContent className="p-4 text-center">
+              <div className="flex items-center justify-center mb-2">
+                <TrendingUp className="h-5 w-5 text-orange-600" />
+              </div>
+              <p className="text-2xl font-bold text-orange-700">
+                {processedCIMCount > 0 ? Math.round((processedCIMCount / cimCount) * 100) : 0}%
+              </p>
+              <p className="text-sm text-orange-600">Success Rate</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Main Document Library */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Document Library ({documents.length})
+              {unprocessedCount > 0 && (
+                <Badge variant="secondary" className="ml-2">
+                  {unprocessedCount} unprocessed
+                </Badge>
+              )}
+              {isServerHealthy !== null && (
+                <Badge variant={isServerHealthy ? "default" : "destructive"} className="ml-2">
+                  AI Server: {isServerHealthy ? "Online" : "Offline"}
+                </Badge>
+              )}
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              {selectedDocs.size > 0 && (
+                <Button
+                  onClick={processSelectedDocuments}
+                  disabled={!isServerHealthy}
+                  size="sm"
+                  variant="outline"
+                >
+                  <Brain className="h-4 w-4 mr-1" />
+                  Process Selected ({selectedDocs.size})
+                </Button>
+              )}
+              <div className="flex items-center gap-2 max-w-sm">
+                <Search className="h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search documents..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="max-w-xs"
+                />
+              </div>
             </div>
           </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {filteredDocuments.length === 0 ? (
-          <div className="text-center py-8">
-            <FileText className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">
-              {documents.length === 0 ? "No documents uploaded" : "No documents found"}
-            </h3>
-            <p className="text-muted-foreground">
-              {documents.length === 0 
-                ? "Upload documents using the form above to get started"
-                : "Try adjusting your search terms"
-              }
-            </p>
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12">
-                  <Checkbox
-                    checked={selectedDocs.size === filteredDocuments.length && filteredDocuments.length > 0}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        setSelectedDocs(new Set(filteredDocuments.map(doc => doc.id)));
-                      } else {
-                        setSelectedDocs(new Set());
-                      }
-                    }}
-                  />
-                </TableHead>
-                <TableHead>Document</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Size</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Uploaded</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredDocuments.map((document) => {
-                const isProcessing = processingDocs.has(document.id);
-                const isProcessingCIM = processingCIMDocs.has(document.id);
-                const displayName = document.name || document.file_name || 'Unknown';
-                const filePath = document.file_path || document.storage_path || '';
-                const potentialCIM = isPotentialCIM(document);
-                
-                return (
-                  <TableRow key={document.id}>
-                    <TableCell>
-                      <Checkbox
-                        checked={selectedDocs.has(document.id)}
-                        onCheckedChange={() => toggleDocumentSelection(document.id)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        {getFileIcon(document.file_type)}
-                        <div>
-                          <p className="font-medium">{displayName}</p>
-                          <div className="flex items-center gap-2">
-                            {document.classified_as && (
-                              <p className="text-sm text-muted-foreground">
-                                {document.classified_as}
-                              </p>
-                            )}
-                            {potentialCIM && document.classified_as !== 'CIM Analysis' && (
-                              <Badge variant="outline" className="text-xs">
-                                Potential CIM
-                              </Badge>
-                            )}
+        </CardHeader>
+        <CardContent>
+          {filteredDocuments.length === 0 ? (
+            <div className="text-center py-8">
+              <FileText className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium mb-2">
+                {documents.length === 0 ? "No documents uploaded" : "No documents found"}
+              </h3>
+              <p className="text-muted-foreground">
+                {documents.length === 0 
+                  ? "Upload documents using the form above to get started"
+                  : "Try adjusting your search terms"
+                }
+              </p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12">
+                    <Checkbox
+                      checked={selectedDocs.size === filteredDocuments.length && filteredDocuments.length > 0}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedDocs(new Set(filteredDocuments.map(doc => doc.id)));
+                        } else {
+                          setSelectedDocs(new Set());
+                        }
+                      }}
+                    />
+                  </TableHead>
+                  <TableHead>Document</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Size</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Uploaded</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredDocuments.map((document) => {
+                  const isProcessing = processingDocs.has(document.id);
+                  const isProcessingCIM = processingCIMDocs.has(document.id);
+                  const displayName = document.name || document.file_name || 'Unknown';
+                  const filePath = document.file_path || document.storage_path || '';
+                  const potentialCIM = isPotentialCIM(document);
+                  
+                  return (
+                    <TableRow key={document.id} className="hover:bg-muted/50">
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedDocs.has(document.id)}
+                          onCheckedChange={() => toggleDocumentSelection(document.id)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          {getFileIcon(document.file_type)}
+                          <div>
+                            <p className="font-medium">{displayName}</p>
+                            <div className="flex items-center gap-2">
+                              {document.classified_as && (
+                                <p className="text-sm text-muted-foreground">
+                                  {document.classified_as}
+                                </p>
+                              )}
+                              {potentialCIM && document.classified_as !== 'CIM Analysis' && (
+                                <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+                                  <Brain className="h-3 w-3 mr-1" />
+                                  Potential CIM
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="uppercase">
-                        {document.file_type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {document.size ? `${(document.size / 1024 / 1024).toFixed(2)} MB` : 'Unknown'}
-                    </TableCell>
-                    <TableCell>
-                      {getStatusBadge(document.processed, isProcessing || isProcessingCIM, document.classified_as)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                        <Calendar className="h-4 w-4" />
-                        {formatDistanceToNow(new Date(document.uploaded_at), { addSuffix: true })}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {!document.processed && potentialCIM && (
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="uppercase text-xs">
+                          {document.file_type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {document.size ? `${(document.size / 1024 / 1024).toFixed(2)} MB` : 'Unknown'}
+                      </TableCell>
+                      <TableCell>
+                        {getStatusBadge(document.processed, isProcessing || isProcessingCIM, document.classified_as, document.id)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                          <Calendar className="h-4 w-4" />
+                          {formatDistanceToNow(new Date(document.uploaded_at), { addSuffix: true })}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {!document.processed && potentialCIM && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => processCIMDocument(document)}
+                              disabled={isProcessingCIM || !isServerHealthy}
+                              title="Process as CIM"
+                              className="hover:bg-purple-50 hover:text-purple-600"
+                            >
+                              {isProcessingCIM ? (
+                                <Loader className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Award className="h-4 w-4" />
+                              )}
+                            </Button>
+                          )}
+                          {!document.processed && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => processDocument(document)}
+                              disabled={isProcessing || !isServerHealthy}
+                              title="Process with AI"
+                              className="hover:bg-blue-50 hover:text-blue-600"
+                            >
+                              {isProcessing ? (
+                                <Loader className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Brain className="h-4 w-4" />
+                              )}
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => processCIMDocument(document)}
-                            disabled={isProcessingCIM || !isServerHealthy}
-                            title="Process as CIM"
+                            onClick={() => handleDownload(filePath, displayName)}
+                            title="Download"
+                            className="hover:bg-gray-50"
                           >
-                            {isProcessingCIM ? (
-                              <Loader className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Award className="h-4 w-4 text-purple-500" />
-                            )}
+                            <Download className="h-4 w-4" />
                           </Button>
-                        )}
-                        {!document.processed && (
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => processDocument(document)}
-                            disabled={isProcessing || !isServerHealthy}
-                            title="Process with AI"
+                            onClick={() => handleDelete(document.id, filePath)}
+                            title="Delete"
+                            className="hover:bg-red-50 hover:text-red-600"
                           >
-                            {isProcessing ? (
-                              <Loader className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Brain className="h-4 w-4" />
-                            )}
+                            <Trash2 className="h-4 w-4" />
                           </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDownload(filePath, displayName)}
-                          title="Download"
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(document.id, filePath)}
-                          title="Delete"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
