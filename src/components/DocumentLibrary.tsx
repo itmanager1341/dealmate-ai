@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -110,6 +111,34 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
     console.log(`Attempting to delete document ${documentId} with file path: ${filePath}`);
 
     try {
+      // First, delete related records from ai_outputs table
+      console.log(`Deleting related AI outputs for document: ${documentId}`);
+      const { error: aiOutputsError } = await supabase
+        .from('ai_outputs')
+        .delete()
+        .eq('document_id', documentId);
+
+      if (aiOutputsError) {
+        console.error("Error deleting AI outputs:", aiOutputsError);
+        toast.warning("Failed to delete AI outputs, but continuing with document deletion");
+      } else {
+        console.log("AI outputs deleted successfully");
+      }
+
+      // Delete related records from cim_analysis table
+      console.log(`Deleting related CIM analysis for document: ${documentId}`);
+      const { error: cimError } = await supabase
+        .from('cim_analysis')
+        .delete()
+        .eq('document_id', documentId);
+
+      if (cimError) {
+        console.error("Error deleting CIM analysis:", cimError);
+        toast.warning("Failed to delete CIM analysis, but continuing with document deletion");
+      } else {
+        console.log("CIM analysis deleted successfully");
+      }
+
       // Only attempt to delete from storage if we have a valid file path
       if (filePath && filePath.trim() !== '') {
         console.log(`Deleting file from storage: ${filePath}`);
@@ -129,7 +158,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
         toast.warning("No file path found, removing database record only");
       }
 
-      // Delete from database
+      // Finally, delete from documents table
       console.log(`Deleting document record from database: ${documentId}`);
       const { error: dbError } = await supabase
         .from('documents')
@@ -142,7 +171,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       }
 
       console.log("Document successfully deleted from database");
-      toast.success("Document deleted successfully");
+      toast.success("Document and all related data deleted successfully");
       fetchDocuments();
       onDocumentUpdate?.();
     } catch (error) {
