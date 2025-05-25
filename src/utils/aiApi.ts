@@ -194,6 +194,7 @@ async function storeCIMAnalysis(
   processingResponse: CIMProcessingResponse
 ): Promise<void> {
   console.log('Storing CIM analysis for deal:', dealId, 'document:', documentId);
+  console.log('Analysis data being stored:', analysisData);
   
   try {
     // Store in cim_analysis table with enhanced data structure
@@ -498,6 +499,7 @@ export async function processCIM(file: File, dealId: string, documentId?: string
       formData.append('document_id', documentId);
     }
 
+    console.log('Sending CIM processing request to AI server...');
     const response = await fetch(`${AI_SERVER_URL}/process-cim`, {
       method: 'POST',
       body: formData,
@@ -506,10 +508,12 @@ export async function processCIM(file: File, dealId: string, documentId?: string
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error('CIM processing request failed:', response.status, errorText);
       throw new Error(`HTTP ${response.status}: ${errorText}`);
     }
 
     const result: CIMProcessingResponse = await response.json();
+    console.log('CIM processing response received:', result);
     
     if (!result.success) {
       throw new Error(result.error || 'CIM processing failed');
@@ -518,15 +522,20 @@ export async function processCIM(file: File, dealId: string, documentId?: string
     // Parse the AI analysis JSON string from your backend
     let analysisData: CIMAnalysisResult;
     try {
+      console.log('Parsing CIM analysis data:', result.ai_analysis);
       analysisData = JSON.parse(result.ai_analysis);
+      console.log('Successfully parsed CIM analysis:', analysisData);
     } catch (parseError) {
       console.error('Error parsing CIM analysis JSON:', parseError);
+      console.error('Raw analysis data:', result.ai_analysis);
       throw new Error('Failed to parse CIM analysis data');
     }
 
     // Store results using enhanced CIM-specific storage function
     if (documentId) {
+      console.log('Storing CIM analysis results...');
       await storeCIMAnalysis(dealId, documentId, analysisData, result);
+      console.log('CIM analysis results stored successfully');
     }
 
     console.log(`Enhanced CIM processing successful for ${file.name}`);

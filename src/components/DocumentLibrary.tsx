@@ -267,7 +267,8 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
         throw new Error("No file path found for document");
       }
 
-      console.log(`Starting CIM processing for document: ${document.name || document.file_name}`);
+      console.log(`Starting CIM analysis for document: ${document.name || document.file_name}`);
+      toast.info("Starting comprehensive CIM analysis...", { duration: 3000 });
       
       // Download the file from storage
       const { data: fileData, error: downloadError } = await supabase.storage
@@ -281,7 +282,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
 
       const fileName = document.name || document.file_name || 'unknown';
       const file = new File([fileData], fileName, { 
-        type: getFileTypeFromExtension(document.file_type) 
+        type: 'application/pdf'
       });
 
       console.log(`Processing CIM file: ${fileName} (${file.size} bytes)`);
@@ -289,7 +290,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       // Call CIM processing with document ID to enable data storage
       const result = await processCIM(file, dealId, documentId);
       
-      if (result.success) {
+      if (result.success && result.data) {
         console.log(`CIM processing successful for ${fileName}:`, result.data);
         
         // Update document as processed in database
@@ -306,11 +307,19 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
           throw updateError;
         }
 
-        toast.success(`Successfully processed CIM ${fileName} - Investment analysis complete`);
+        // Show success message with key insights
+        const analysisData = result.data.parsed_analysis || result.data;
+        const grade = analysisData?.investment_grade || 'N/A';
+        const recommendation = analysisData?.recommendation?.action || 'N/A';
         
-        // Call the callback to notify parent component
-        if (onCIMAnalysisComplete && result.data) {
-          onCIMAnalysisComplete(result.data);
+        toast.success(
+          `CIM analysis complete! Investment Grade: ${grade}, Recommendation: ${recommendation}`,
+          { duration: 5000 }
+        );
+        
+        // Call the callback to notify parent component with the parsed analysis
+        if (onCIMAnalysisComplete && analysisData) {
+          onCIMAnalysisComplete(analysisData);
         }
         
         // Refresh documents list
