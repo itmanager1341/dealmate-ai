@@ -107,28 +107,47 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
   const handleDelete = async (documentId: string, filePath: string) => {
     if (!confirm("Are you sure you want to delete this document?")) return;
 
-    try {
-      // Delete from storage
-      const { error: storageError } = await supabase.storage
-        .from('documents')
-        .remove([filePath]);
+    console.log(`Attempting to delete document ${documentId} with file path: ${filePath}`);
 
-      if (storageError) throw storageError;
+    try {
+      // Only attempt to delete from storage if we have a valid file path
+      if (filePath && filePath.trim() !== '') {
+        console.log(`Deleting file from storage: ${filePath}`);
+        const { error: storageError } = await supabase.storage
+          .from('documents')
+          .remove([filePath]);
+
+        if (storageError) {
+          console.error("Storage deletion error:", storageError);
+          // Don't throw here - we still want to delete the database record
+          toast.warning("File may not exist in storage, but will remove database record");
+        } else {
+          console.log("File successfully deleted from storage");
+        }
+      } else {
+        console.log("No valid file path found, skipping storage deletion");
+        toast.warning("No file path found, removing database record only");
+      }
 
       // Delete from database
+      console.log(`Deleting document record from database: ${documentId}`);
       const { error: dbError } = await supabase
         .from('documents')
         .delete()
         .eq('id', documentId);
 
-      if (dbError) throw dbError;
+      if (dbError) {
+        console.error("Database deletion error:", dbError);
+        throw dbError;
+      }
 
+      console.log("Document successfully deleted from database");
       toast.success("Document deleted successfully");
       fetchDocuments();
       onDocumentUpdate?.();
     } catch (error) {
       console.error("Error deleting document:", error);
-      toast.error("Failed to delete document");
+      toast.error(`Failed to delete document: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
