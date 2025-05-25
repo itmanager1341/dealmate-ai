@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,6 +30,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { processFile, processCIM, checkAIServerHealth } from "../utils/aiApi";
+import { CIMProcessingProgress } from "./CIMProcessingProgress";
 
 interface DocumentLibraryProps {
   dealId: string;
@@ -47,6 +47,21 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
   const [processingCIMDocs, setProcessingCIMDocs] = useState<Set<string>>(new Set());
   const [isServerHealthy, setIsServerHealthy] = useState<boolean | null>(null);
   const [processingProgress, setProcessingProgress] = useState<Map<string, number>>(new Map());
+  
+  // Enhanced CIM processing state
+  const [cimProcessingState, setCimProcessingState] = useState<{
+    documentId: string | null;
+    fileName: string;
+    progress: number;
+    currentStep: string;
+    error: string | null;
+  }>({
+    documentId: null,
+    fileName: '',
+    progress: 0,
+    currentStep: 'validation',
+    error: null
+  });
 
   useEffect(() => {
     fetchDocuments();
@@ -306,8 +321,18 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
     }
 
     const documentId = document.id;
+    const fileName = document.name || document.file_name || 'unknown';
+    
+    // Initialize CIM processing state
+    setCimProcessingState({
+      documentId,
+      fileName,
+      progress: 0,
+      currentStep: 'validation',
+      error: null
+    });
+    
     setProcessingCIMDocs(prev => new Set(prev).add(documentId));
-    simulateProgress(documentId, (id) => !processingCIMDocs.has(id));
 
     try {
       const storageFilePath = document.file_path || document.storage_path;
@@ -315,8 +340,15 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
         throw new Error("No file path found for document");
       }
 
-      console.log(`Starting CIM analysis for document: ${document.name || document.file_name}`);
+      console.log(`Starting CIM analysis for document: ${fileName}`);
       toast.info("Starting comprehensive CIM analysis...", { duration: 3000 });
+      
+      // Step 1: Validation (0-20%)
+      setCimProcessingState(prev => ({ 
+        ...prev, 
+        progress: 10, 
+        currentStep: 'validation' 
+      }));
       
       // Download the file from storage
       const { data: fileData, error: downloadError } = await supabase.storage
@@ -328,18 +360,41 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
         throw downloadError;
       }
 
-      const fileName = document.name || document.file_name || 'unknown';
+      setCimProcessingState(prev => ({ 
+        ...prev, 
+        progress: 20, 
+        currentStep: 'analysis' 
+      }));
+
       const file = new File([fileData], fileName, { 
         type: 'application/pdf'
       });
 
       console.log(`Processing CIM file: ${fileName} (${file.size} bytes)`);
       
+      // Step 2: AI Analysis (20-80%)
+      // Simulate progress during analysis
+      const analysisInterval = setInterval(() => {
+        setCimProcessingState(prev => ({
+          ...prev,
+          progress: Math.min(prev.progress + 5, 75)
+        }));
+      }, 1000);
+      
       // Call CIM processing with document ID to enable data storage
       const result = await processCIM(file, dealId, documentId);
       
+      clearInterval(analysisInterval);
+      
       if (result.success && result.data) {
         console.log(`CIM processing successful for ${fileName}:`, result.data);
+        
+        // Step 3: Storage (80-90%)
+        setCimProcessingState(prev => ({ 
+          ...prev, 
+          progress: 85, 
+          currentStep: 'storage' 
+        }));
         
         // Update document as processed in database
         const { error: updateError } = await supabase
@@ -354,6 +409,13 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
           console.error("Error updating document status:", updateError);
           throw updateError;
         }
+
+        // Step 4: Complete (90-100%)
+        setCimProcessingState(prev => ({ 
+          ...prev, 
+          progress: 100, 
+          currentStep: 'complete' 
+        }));
 
         // Show success message with key insights
         const analysisData = result.data.parsed_analysis || result.data;
@@ -374,14 +436,44 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
         fetchDocuments();
         onDocumentUpdate?.();
         
+        // Clear processing state after a delay
+        setTimeout(() => {
+          setCimProcessingState({
+            documentId: null,
+            fileName: '',
+            progress: 0,
+            currentStep: 'validation',
+            error: null
+          });
+        }, 3000);
+        
       } else {
         console.error(`CIM processing failed for ${fileName}:`, result.error);
         throw new Error(result.error || 'CIM processing failed');
       }
       
     } catch (error) {
-      console.error(`Error processing CIM ${document.name || document.file_name}:`, error);
-      toast.error(`Failed to process CIM ${document.name || document.file_name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error(`Error processing CIM ${fileName}:`, error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      setCimProcessingState(prev => ({ 
+        ...prev, 
+        error: errorMessage,
+        currentStep: 'error'
+      }));
+      
+      toast.error(`Failed to process CIM ${fileName}: ${errorMessage}`);
+      
+      // Clear error state after delay
+      setTimeout(() => {
+        setCimProcessingState({
+          documentId: null,
+          fileName: '',
+          progress: 0,
+          currentStep: 'validation',
+          error: null
+        });
+      }, 5000);
     } finally {
       setProcessingCIMDocs(prev => {
         const newSet = new Set(prev);
@@ -515,6 +607,17 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
 
   return (
     <div className="space-y-6">
+      {/* CIM Processing Progress */}
+      {cimProcessingState.documentId && (
+        <CIMProcessingProgress
+          isProcessing={processingCIMDocs.has(cimProcessingState.documentId)}
+          progress={cimProcessingState.progress}
+          currentStep={cimProcessingState.currentStep}
+          fileName={cimProcessingState.fileName}
+          error={cimProcessingState.error}
+        />
+      )}
+
       {/* CIM Analytics Dashboard - Only show if CIMs detected */}
       {cimCount > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

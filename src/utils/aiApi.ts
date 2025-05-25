@@ -151,6 +151,94 @@ export function validateCIMFile(file: File): { isValid: boolean; message: string
   };
 }
 
+// Enhanced JSON parsing with fallback strategies
+function parseAIAnalysisWithFallback(analysisText: string): CIMAnalysisResult {
+  console.log('Attempting to parse AI analysis:', analysisText.substring(0, 200) + '...');
+  
+  // Strategy 1: Direct JSON parse
+  try {
+    const parsed = JSON.parse(analysisText);
+    console.log('Successfully parsed as direct JSON');
+    return parsed;
+  } catch (error) {
+    console.log('Direct JSON parse failed, trying fallback strategies...');
+  }
+  
+  // Strategy 2: Extract JSON from markdown code blocks
+  const jsonBlockRegex = /```json\s*([\s\S]*?)\s*```/i;
+  const jsonMatch = analysisText.match(jsonBlockRegex);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1]);
+      console.log('Successfully parsed JSON from markdown code block');
+      return parsed;
+    } catch (error) {
+      console.log('Failed to parse JSON from markdown block');
+    }
+  }
+  
+  // Strategy 3: Extract JSON from any code blocks
+  const codeBlockRegex = /```\s*([\s\S]*?)\s*```/i;
+  const codeMatch = analysisText.match(codeBlockRegex);
+  if (codeMatch) {
+    try {
+      const parsed = JSON.parse(codeMatch[1]);
+      console.log('Successfully parsed JSON from general code block');
+      return parsed;
+    } catch (error) {
+      console.log('Failed to parse JSON from general code block');
+    }
+  }
+  
+  // Strategy 4: Look for JSON-like content between braces
+  const braceRegex = /\{[\s\S]*\}/;
+  const braceMatch = analysisText.match(braceRegex);
+  if (braceMatch) {
+    try {
+      const parsed = JSON.parse(braceMatch[0]);
+      console.log('Successfully parsed JSON from brace extraction');
+      return parsed;
+    } catch (error) {
+      console.log('Failed to parse JSON from brace extraction');
+    }
+  }
+  
+  // Strategy 5: Create fallback structure from plain text
+  console.log('All JSON parsing strategies failed, creating fallback structure');
+  return {
+    investment_grade: 'N/A',
+    executive_summary: analysisText.substring(0, 500) + '...',
+    business_model: {
+      type: 'Unknown',
+      revenue_streams: ['Unable to parse from response'],
+      key_value_propositions: ['Unable to parse from response']
+    },
+    financial_metrics: {
+      revenue_cagr: 'N/A',
+      ebitda_margin: 'N/A',
+      deal_size_estimate: 'N/A',
+      revenue_multiple: 'N/A',
+      ebitda_multiple: 'N/A'
+    },
+    key_risks: [{
+      risk: 'Analysis parsing failed',
+      severity: 'High' as const,
+      impact: 'Unable to provide detailed risk assessment'
+    }],
+    investment_highlights: ['Analysis parsing failed - raw response available'],
+    management_questions: ['Unable to parse management questions from response'],
+    competitive_position: {
+      strengths: ['Unable to parse from response'],
+      weaknesses: ['Unable to parse from response'],
+      market_position: 'Unknown'
+    },
+    recommendation: {
+      action: 'More Info Needed' as const,
+      rationale: 'Analysis could not be properly parsed from AI response'
+    }
+  };
+}
+
 // Health check for AI server with alias for consistency
 export async function checkAIServerHealth(): Promise<boolean> {
   return await checkApiHealth();
@@ -476,7 +564,7 @@ async function storeProcessingResults(
   }
 }
 
-// Process CIM documents for investment analysis
+// Process CIM documents for investment analysis with enhanced error handling
 export async function processCIM(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
     console.log(`Starting enhanced CIM processing for ${file.name}`);
@@ -519,16 +607,15 @@ export async function processCIM(file: File, dealId: string, documentId?: string
       throw new Error(result.error || 'CIM processing failed');
     }
 
-    // Parse the AI analysis JSON string from your backend
+    // Enhanced parsing with fallback strategies
     let analysisData: CIMAnalysisResult;
     try {
-      console.log('Parsing CIM analysis data:', result.ai_analysis);
-      analysisData = JSON.parse(result.ai_analysis);
+      console.log('Raw AI analysis response:', result.ai_analysis);
+      analysisData = parseAIAnalysisWithFallback(result.ai_analysis);
       console.log('Successfully parsed CIM analysis:', analysisData);
     } catch (parseError) {
-      console.error('Error parsing CIM analysis JSON:', parseError);
-      console.error('Raw analysis data:', result.ai_analysis);
-      throw new Error('Failed to parse CIM analysis data');
+      console.error('All parsing strategies failed:', parseError);
+      throw new Error('Failed to parse CIM analysis data from AI response');
     }
 
     // Store results using enhanced CIM-specific storage function
