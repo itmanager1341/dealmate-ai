@@ -1,10 +1,10 @@
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AdminModelSettings } from "@/components/AdminModelSettings";
 import { ModelUsageAnalytics } from "@/components/ModelUsageAnalytics";
 import { APIKeyManagement } from "@/components/APIKeyManagement";
 import { Settings as SettingsIcon, Bot, Key, BarChart3 } from "lucide-react";
-import { EnhancedAdminModelSettings } from "@/components/EnhancedAdminModelSettings";
+import { SimpleModelTable } from "@/components/SimpleModelTable";
 
 export default function Settings() {
   return (
@@ -44,7 +44,7 @@ export default function Settings() {
               </p>
             </CardHeader>
             <CardContent>
-              <EnhancedAdminModelSettings />
+              <SimpleModelTable />
             </CardContent>
           </Card>
         </TabsContent>

@@ -41,10 +41,12 @@ export type Database = {
       }
       ai_models: {
         Row: {
+          compatible_use_cases: string[] | null
           context_window: number | null
           cost_per_input_token: number
           cost_per_output_token: number
           created_at: string | null
+          description: string | null
           id: string
           is_active: boolean | null
           is_default: boolean | null
@@ -60,10 +62,12 @@ export type Database = {
           use_case: Database["public"]["Enums"]["model_use_case"]
         }
         Insert: {
+          compatible_use_cases?: string[] | null
           context_window?: number | null
           cost_per_input_token?: number
           cost_per_output_token?: number
           created_at?: string | null
+          description?: string | null
           id?: string
           is_active?: boolean | null
           is_default?: boolean | null
@@ -79,10 +83,12 @@ export type Database = {
           use_case: Database["public"]["Enums"]["model_use_case"]
         }
         Update: {
+          compatible_use_cases?: string[] | null
           context_window?: number | null
           cost_per_input_token?: number
           cost_per_output_token?: number
           created_at?: string | null
+          description?: string | null
           id?: string
           is_active?: boolean | null
           is_default?: boolean | null

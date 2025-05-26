@@ -34,6 +34,9 @@ export interface AIModel {
   speed_score: number;
   created_at: string;
   updated_at: string;
+  // New simplified fields
+  compatible_use_cases?: string[];
+  description?: string;
   // Enhanced fields
   tokens_per_second?: number;
   best_for?: string[];
