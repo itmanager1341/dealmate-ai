@@ -11,6 +11,7 @@ import Upload from "./pages/Upload";
 import DealWorkspace from "./pages/DealWorkspace";
 import Compare from "./pages/Compare";
 import Archive from "./pages/Archive";
+import Settings from "./pages/Settings";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import NotFound from "./pages/NotFound";
@@ -35,6 +36,7 @@ const App = () => (
             <Route path="/deal/:id" element={<DealWorkspace />} />
             <Route path="/compare" element={<Compare />} />
             <Route path="/archive" element={<Archive />} />
+            <Route path="/settings" element={<Settings />} />
           </Route>
           
           <Route path="*" element={<NotFound />} />

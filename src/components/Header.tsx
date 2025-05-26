@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { SearchInput } from "@/components/ui/search";
-import { ChevronDown, LogOut, User } from "lucide-react";
+import { ChevronDown, LogOut, User, Settings } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { User as UserType } from "@supabase/supabase-js";
@@ -111,6 +111,14 @@ export function Header() {
           >
             <Link to="/archive">Archive</Link>
           </Button>
+          <Button 
+            variant={isActive("/settings") ? "default" : "ghost"} 
+            size="sm" 
+            asChild
+            className="text-sm"
+          >
+            <Link to="/settings">Settings</Link>
+          </Button>
         </div>
         
         <div className="ml-auto flex items-center space-x-4">
@@ -146,6 +154,12 @@ export function Header() {
                   <Link to="/profile" className="cursor-pointer">
                     <User className="mr-2 h-4 w-4" />
                     <span>Profile</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/settings" className="cursor-pointer">
+                    <Settings className="mr-2 h-4 w-4" />
+                    <span>Settings</span>
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
