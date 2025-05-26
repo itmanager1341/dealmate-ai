@@ -39,6 +39,66 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_models: {
+        Row: {
+          context_window: number | null
+          cost_per_input_token: number
+          cost_per_output_token: number
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          is_default: boolean | null
+          max_tokens: number | null
+          model_id: string
+          name: string
+          performance_score: number | null
+          provider: Database["public"]["Enums"]["ai_provider"]
+          speed_score: number | null
+          supports_function_calling: boolean | null
+          supports_vision: boolean | null
+          updated_at: string | null
+          use_case: Database["public"]["Enums"]["model_use_case"]
+        }
+        Insert: {
+          context_window?: number | null
+          cost_per_input_token?: number
+          cost_per_output_token?: number
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_default?: boolean | null
+          max_tokens?: number | null
+          model_id: string
+          name: string
+          performance_score?: number | null
+          provider: Database["public"]["Enums"]["ai_provider"]
+          speed_score?: number | null
+          supports_function_calling?: boolean | null
+          supports_vision?: boolean | null
+          updated_at?: string | null
+          use_case: Database["public"]["Enums"]["model_use_case"]
+        }
+        Update: {
+          context_window?: number | null
+          cost_per_input_token?: number
+          cost_per_output_token?: number
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_default?: boolean | null
+          max_tokens?: number | null
+          model_id?: string
+          name?: string
+          performance_score?: number | null
+          provider?: Database["public"]["Enums"]["ai_provider"]
+          speed_score?: number | null
+          supports_function_calling?: boolean | null
+          supports_vision?: boolean | null
+          updated_at?: string | null
+          use_case?: Database["public"]["Enums"]["model_use_case"]
+        }
+        Relationships: []
+      }
       ai_outputs: {
         Row: {
           agent_type: string | null
@@ -510,6 +570,116 @@ export type Database = {
           },
         ]
       }
+      model_configurations: {
+        Row: {
+          created_at: string | null
+          deal_id: string | null
+          id: string
+          is_testing_mode: boolean | null
+          model_id: string | null
+          updated_at: string | null
+          use_case: Database["public"]["Enums"]["model_use_case"]
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          deal_id?: string | null
+          id?: string
+          is_testing_mode?: boolean | null
+          model_id?: string | null
+          updated_at?: string | null
+          use_case: Database["public"]["Enums"]["model_use_case"]
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          deal_id?: string | null
+          id?: string
+          is_testing_mode?: boolean | null
+          model_id?: string | null
+          updated_at?: string | null
+          use_case?: Database["public"]["Enums"]["model_use_case"]
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "model_configurations_model_id_fkey"
+            columns: ["model_id"]
+            isOneToOne: false
+            referencedRelation: "ai_models"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      model_usage_logs: {
+        Row: {
+          agent_log_id: string | null
+          cost_usd: number | null
+          created_at: string | null
+          deal_id: string | null
+          document_id: string | null
+          error_message: string | null
+          id: string
+          input_tokens: number | null
+          model_id: string | null
+          output_tokens: number | null
+          processing_time_ms: number | null
+          success: boolean | null
+          total_tokens: number | null
+          use_case: Database["public"]["Enums"]["model_use_case"]
+          user_id: string | null
+        }
+        Insert: {
+          agent_log_id?: string | null
+          cost_usd?: number | null
+          created_at?: string | null
+          deal_id?: string | null
+          document_id?: string | null
+          error_message?: string | null
+          id?: string
+          input_tokens?: number | null
+          model_id?: string | null
+          output_tokens?: number | null
+          processing_time_ms?: number | null
+          success?: boolean | null
+          total_tokens?: number | null
+          use_case: Database["public"]["Enums"]["model_use_case"]
+          user_id?: string | null
+        }
+        Update: {
+          agent_log_id?: string | null
+          cost_usd?: number | null
+          created_at?: string | null
+          deal_id?: string | null
+          document_id?: string | null
+          error_message?: string | null
+          id?: string
+          input_tokens?: number | null
+          model_id?: string | null
+          output_tokens?: number | null
+          processing_time_ms?: number | null
+          success?: boolean | null
+          total_tokens?: number | null
+          use_case?: Database["public"]["Enums"]["model_use_case"]
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "model_usage_logs_agent_log_id_fkey"
+            columns: ["agent_log_id"]
+            isOneToOne: false
+            referencedRelation: "agent_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "model_usage_logs_model_id_fkey"
+            columns: ["model_id"]
+            isOneToOne: false
+            referencedRelation: "ai_models"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       transcripts: {
         Row: {
           content: string | null
@@ -606,10 +776,33 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      calculate_usage_cost: {
+        Args: {
+          input_tokens: number
+          output_tokens: number
+          cost_per_input_token: number
+          cost_per_output_token: number
+        }
+        Returns: number
+      }
+      get_effective_model_config: {
+        Args: {
+          p_user_id: string
+          p_deal_id: string
+          p_use_case: Database["public"]["Enums"]["model_use_case"]
+        }
+        Returns: string
+      }
     }
     Enums: {
-      [_ in never]: never
+      ai_provider: "openai" | "anthropic" | "google" | "local"
+      model_use_case:
+        | "cim_analysis"
+        | "document_processing"
+        | "excel_analysis"
+        | "audio_transcription"
+        | "memo_generation"
+        | "general_analysis"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -724,6 +917,16 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      ai_provider: ["openai", "anthropic", "google", "local"],
+      model_use_case: [
+        "cim_analysis",
+        "document_processing",
+        "excel_analysis",
+        "audio_transcription",
+        "memo_generation",
+        "general_analysis",
+      ],
+    },
   },
 } as const

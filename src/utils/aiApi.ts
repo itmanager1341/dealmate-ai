@@ -564,10 +564,107 @@ async function storeProcessingResults(
   }
 }
 
+// Add new function to get selected model for use case
+async function getSelectedModel(useCase: string, dealId?: string): Promise<{ modelId: string; model: any } | null> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    // Get effective model configuration
+    const { data: modelId, error: configError } = await supabase
+      .rpc('get_effective_model_config', {
+        p_user_id: user.id,
+        p_deal_id: dealId || null,
+        p_use_case: useCase
+      });
+
+    if (configError) {
+      console.error('Error getting model config:', configError);
+      return null;
+    }
+
+    if (!modelId) return null;
+
+    // Get model details
+    const { data: model, error: modelError } = await supabase
+      .from('ai_models')
+      .select('*')
+      .eq('id', modelId)
+      .single();
+
+    if (modelError) {
+      console.error('Error getting model details:', modelError);
+      return null;
+    }
+
+    return { modelId, model };
+  } catch (error) {
+    console.error('Error in getSelectedModel:', error);
+    return null;
+  }
+}
+
+// Add function to log usage
+async function logModelUsage(
+  modelId: string,
+  useCase: string,
+  inputTokens: number,
+  outputTokens: number,
+  processingTime: number,
+  success: boolean,
+  dealId?: string,
+  documentId?: string,
+  errorMessage?: string
+): Promise<void> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // Get model costs
+    const { data: model } = await supabase
+      .from('ai_models')
+      .select('cost_per_input_token, cost_per_output_token')
+      .eq('id', modelId)
+      .single();
+
+    const costUsd = model ? 
+      (inputTokens * model.cost_per_input_token / 1000) + 
+      (outputTokens * model.cost_per_output_token / 1000) : 0;
+
+    await supabase.from('model_usage_logs').insert({
+      deal_id: dealId,
+      document_id: documentId,
+      model_id: modelId,
+      use_case: useCase,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      total_tokens: inputTokens + outputTokens,
+      cost_usd: costUsd,
+      processing_time_ms: processingTime,
+      success,
+      error_message: errorMessage,
+      user_id: user.id
+    });
+  } catch (error) {
+    console.error('Error logging model usage:', error);
+  }
+}
+
 // Process CIM documents for investment analysis with enhanced error handling
 export async function processCIM(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
+  const startTime = Date.now();
+  let selectedModelInfo = null;
+  
   try {
     console.log(`Starting enhanced CIM processing for ${file.name}`);
+    
+    // Get selected model for CIM analysis
+    selectedModelInfo = await getSelectedModel('cim_analysis', dealId);
+    if (!selectedModelInfo) {
+      console.log('No model configuration found, using default behavior');
+    } else {
+      console.log(`Using model: ${selectedModelInfo.model.name} (${selectedModelInfo.model.model_id})`);
+    }
     
     // Enhanced validation with confidence scoring
     const validation = validateCIMFile(file);
@@ -586,6 +683,12 @@ export async function processCIM(file: File, dealId: string, documentId?: string
     if (documentId) {
       formData.append('document_id', documentId);
     }
+    
+    // Add model selection to request if available
+    if (selectedModelInfo) {
+      formData.append('model_id', selectedModelInfo.model.model_id);
+      formData.append('provider', selectedModelInfo.model.provider);
+    }
 
     console.log('Sending CIM processing request to AI server...');
     const response = await fetch(`${AI_SERVER_URL}/process-cim`, {
@@ -594,9 +697,22 @@ export async function processCIM(file: File, dealId: string, documentId?: string
       mode: 'cors',
     });
 
+    const processingTime = Date.now() - startTime;
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error('CIM processing request failed:', response.status, errorText);
+      
+      // Log failed usage
+      if (selectedModelInfo) {
+        await logModelUsage(
+          selectedModelInfo.modelId,
+          'cim_analysis',
+          0, 0, processingTime, false,
+          dealId, documentId, errorText
+        );
+      }
+      
       throw new Error(`HTTP ${response.status}: ${errorText}`);
     }
 
@@ -604,6 +720,15 @@ export async function processCIM(file: File, dealId: string, documentId?: string
     console.log('CIM processing response received:', result);
     
     if (!result.success) {
+      // Log failed usage
+      if (selectedModelInfo) {
+        await logModelUsage(
+          selectedModelInfo.modelId,
+          'cim_analysis',
+          0, 0, processingTime, false,
+          dealId, documentId, result.error
+        );
+      }
       throw new Error(result.error || 'CIM processing failed');
     }
 
@@ -616,6 +741,24 @@ export async function processCIM(file: File, dealId: string, documentId?: string
     } catch (parseError) {
       console.error('All parsing strategies failed:', parseError);
       throw new Error('Failed to parse CIM analysis data from AI response');
+    }
+
+    // Log successful usage
+    if (selectedModelInfo) {
+      // Estimate token usage (this would ideally come from the API response)
+      const estimatedInputTokens = Math.ceil(result.text_length / 4); // Rough estimate
+      const estimatedOutputTokens = Math.ceil(result.ai_analysis.length / 4);
+      
+      await logModelUsage(
+        selectedModelInfo.modelId,
+        'cim_analysis',
+        estimatedInputTokens,
+        estimatedOutputTokens,
+        processingTime,
+        true,
+        dealId,
+        documentId
+      );
     }
 
     // Store results using enhanced CIM-specific storage function
@@ -632,12 +775,25 @@ export async function processCIM(file: File, dealId: string, documentId?: string
       data: {
         ...result,
         parsed_analysis: analysisData,
-        validation_confidence: validation.confidence
+        validation_confidence: validation.confidence,
+        model_used: selectedModelInfo?.model.name || 'Default'
       },
       processing_time: parseFloat(result.processing_time) || 0
     };
     
   } catch (error) {
+    const processingTime = Date.now() - startTime;
+    
+    // Log failed usage
+    if (selectedModelInfo) {
+      await logModelUsage(
+        selectedModelInfo.modelId,
+        'cim_analysis',
+        0, 0, processingTime, false,
+        dealId, documentId, error instanceof Error ? error.message : 'Unknown error'
+      );
+    }
+    
     console.error('Enhanced CIM processing failed:', error);
     return {
       success: false,

@@ -64,3 +64,6 @@ export interface AIOutput {
 
 // Re-export chunk types
 export * from './chunks';
+
+// Re-export model types
+export * from './models';
