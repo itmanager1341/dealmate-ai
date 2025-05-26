@@ -9,6 +9,13 @@ export type ModelUseCase =
   | 'memo_generation' 
   | 'general_analysis';
 
+export interface ModelRecommendation {
+  level: 'recommended' | 'acceptable' | 'not_recommended';
+  reason: string;
+  costEfficiency: 'high' | 'medium' | 'low';
+  qualityRating: number; // 1-10
+}
+
 export interface AIModel {
   id: string;
   name: string;
@@ -27,6 +34,11 @@ export interface AIModel {
   speed_score: number;
   created_at: string;
   updated_at: string;
+  // Enhanced fields
+  tokens_per_second?: number;
+  best_for?: string[];
+  limitations?: string[];
+  recommendation?: ModelRecommendation;
 }
 
 export interface ModelUsageLog {
@@ -67,3 +79,12 @@ export interface ModelUsageStats {
   cost_by_model: Record<string, number>;
   usage_by_case: Record<ModelUseCase, number>;
 }
+
+export interface BulkConfigurationUpdate {
+  useCase?: ModelUseCase;
+  modelId?: string;
+  isTestingMode?: boolean;
+  applyToAll?: boolean;
+}
+
+export type ConfigurationPreset = 'cost-optimized' | 'performance-optimized' | 'balanced' | 'recommended';
