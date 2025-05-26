@@ -1,3 +1,4 @@
+
 export interface User {
   id: string;
   email: string;
@@ -60,3 +61,6 @@ export interface AIOutput {
   created_at: string;
   prompt?: string;
 }
+
+// Re-export chunk types
+export * from './chunks';

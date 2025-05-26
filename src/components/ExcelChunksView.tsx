@@ -4,19 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/lib/supabase";
-import { BarChart2, CheckCircle, XCircle, Eye } from "lucide-react";
+import { BarChart2, CheckCircle, XCircle, Eye, Link } from "lucide-react";
 import { toast } from "sonner";
-
-interface ExcelChunk {
-  id: string;
-  document_id: string;
-  sheet_name: string;
-  chunk_label: string;
-  data: any;
-  verified_by_user: boolean;
-  created_at: string;
-}
+import type { ExcelChunk, ExcelToChunkLink } from "@/types/chunks";
 
 interface ExcelChunksViewProps {
   dealId: string;
@@ -24,10 +16,12 @@ interface ExcelChunksViewProps {
 
 export function ExcelChunksView({ dealId }: ExcelChunksViewProps) {
   const [chunks, setChunks] = useState<ExcelChunk[]>([]);
+  const [chunkLinks, setChunkLinks] = useState<ExcelToChunkLink[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchExcelChunks();
+    fetchChunkLinks();
   }, [dealId]);
 
   const fetchExcelChunks = async () => {
@@ -47,6 +41,20 @@ export function ExcelChunksView({ dealId }: ExcelChunksViewProps) {
     } catch (error) {
       console.error("Error fetching Excel chunks:", error);
       toast.error("Failed to load Excel data");
+    }
+  };
+
+  const fetchChunkLinks = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('excel_to_chunk_links')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setChunkLinks(data || []);
+    } catch (error) {
+      console.error("Error fetching chunk links:", error);
     } finally {
       setLoading(false);
     }
@@ -74,6 +82,10 @@ export function ExcelChunksView({ dealId }: ExcelChunksViewProps) {
     }
   };
 
+  const getLinkedDocumentChunks = (excelChunkId: string) => {
+    return chunkLinks.filter(link => link.xlsx_chunk_id === excelChunkId);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -98,47 +110,87 @@ export function ExcelChunksView({ dealId }: ExcelChunksViewProps) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium">Excel Data Chunks ({chunks.length})</h3>
-        <Badge variant="outline">
-          {chunks.filter(c => c.verified_by_user).length} verified
-        </Badge>
+        <div className="flex gap-2">
+          <Badge variant="outline">
+            {chunks.filter(c => c.verified_by_user).length} verified
+          </Badge>
+          <Badge variant="outline">
+            {chunkLinks.length} document links
+          </Badge>
+        </div>
       </div>
 
       <div className="grid gap-4">
-        {chunks.map((chunk) => (
-          <Card key={chunk.id}>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium">
-                  {chunk.chunk_label}
-                </CardTitle>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs">
-                    {chunk.sheet_name}
-                  </Badge>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => toggleVerification(chunk.id, chunk.verified_by_user)}
-                    className="h-8 px-2"
-                  >
-                    {chunk.verified_by_user ? (
-                      <CheckCircle className="h-4 w-4 text-green-600" />
-                    ) : (
-                      <XCircle className="h-4 w-4 text-muted-foreground" />
+        {chunks.map((chunk) => {
+          const linkedChunks = getLinkedDocumentChunks(chunk.id);
+          
+          return (
+            <Card key={chunk.id}>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-medium">
+                    {chunk.chunk_label}
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">
+                      {chunk.sheet_name}
+                    </Badge>
+                    {linkedChunks.length > 0 && (
+                      <Badge variant="outline" className="text-xs">
+                        <Link className="h-3 w-3 mr-1" />
+                        {linkedChunks.length} links
+                      </Badge>
                     )}
-                  </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => toggleVerification(chunk.id, chunk.verified_by_user)}
+                      className="h-8 px-2"
+                    >
+                      {chunk.verified_by_user ? (
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="bg-muted/30 rounded-md p-3">
-                <pre className="text-xs text-muted-foreground overflow-x-auto">
-                  {JSON.stringify(chunk.data, null, 2)}
-                </pre>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardHeader>
+              <CardContent>
+                <Tabs defaultValue="data" className="w-full">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="data">Data</TabsTrigger>
+                    <TabsTrigger value="links" disabled={linkedChunks.length === 0}>
+                      <Link className="h-4 w-4 mr-1" />
+                      Links ({linkedChunks.length})
+                    </TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="data" className="mt-4">
+                    <div className="bg-muted/30 rounded-md p-3 max-h-64 overflow-auto">
+                      <pre className="text-xs text-muted-foreground">
+                        {JSON.stringify(chunk.data, null, 2)}
+                      </pre>
+                    </div>
+                  </TabsContent>
+                  
+                  <TabsContent value="links" className="mt-4">
+                    <div className="space-y-2">
+                      {linkedChunks.map((link) => (
+                        <div key={link.id} className="flex items-center justify-between p-2 bg-muted/30 rounded">
+                          <span className="text-sm">{link.relationship_type}</span>
+                          <Badge variant="outline" className="text-xs">
+                            {(link.confidence * 100).toFixed(0)}% confidence
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     </div>
   );

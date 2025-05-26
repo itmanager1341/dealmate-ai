@@ -107,6 +107,48 @@ export type Database = {
           },
         ]
       }
+      chunk_relationships: {
+        Row: {
+          child_chunk_id: string
+          created_at: string
+          id: string
+          parent_chunk_id: string
+          relationship_type: string
+          strength: number | null
+        }
+        Insert: {
+          child_chunk_id: string
+          created_at?: string
+          id?: string
+          parent_chunk_id: string
+          relationship_type: string
+          strength?: number | null
+        }
+        Update: {
+          child_chunk_id?: string
+          created_at?: string
+          id?: string
+          parent_chunk_id?: string
+          relationship_type?: string
+          strength?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chunk_relationships_child_chunk_id_fkey"
+            columns: ["child_chunk_id"]
+            isOneToOne: false
+            referencedRelation: "document_chunks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chunk_relationships_parent_chunk_id_fkey"
+            columns: ["parent_chunk_id"]
+            isOneToOne: false
+            referencedRelation: "document_chunks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cim_analysis: {
         Row: {
           business_model: Json | null
@@ -306,6 +348,63 @@ export type Database = {
           },
         ]
       }
+      document_chunks: {
+        Row: {
+          ai_output: Json | null
+          chunk_index: number
+          chunk_size: number
+          chunk_text: string
+          confidence_score: number | null
+          created_at: string
+          deal_id: string
+          document_id: string
+          end_page: number | null
+          id: string
+          metadata: Json | null
+          processed_by_ai: boolean | null
+          section_title: string | null
+          section_type: string | null
+          start_page: number | null
+          updated_at: string
+        }
+        Insert: {
+          ai_output?: Json | null
+          chunk_index: number
+          chunk_size: number
+          chunk_text: string
+          confidence_score?: number | null
+          created_at?: string
+          deal_id: string
+          document_id: string
+          end_page?: number | null
+          id?: string
+          metadata?: Json | null
+          processed_by_ai?: boolean | null
+          section_title?: string | null
+          section_type?: string | null
+          start_page?: number | null
+          updated_at?: string
+        }
+        Update: {
+          ai_output?: Json | null
+          chunk_index?: number
+          chunk_size?: number
+          chunk_text?: string
+          confidence_score?: number | null
+          created_at?: string
+          deal_id?: string
+          document_id?: string
+          end_page?: number | null
+          id?: string
+          metadata?: Json | null
+          processed_by_ai?: boolean | null
+          section_title?: string | null
+          section_type?: string | null
+          start_page?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       documents: {
         Row: {
           classified_as: string | null
@@ -365,6 +464,48 @@ export type Database = {
             columns: ["uploaded_by"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      excel_to_chunk_links: {
+        Row: {
+          confidence: number | null
+          created_at: string
+          document_chunk_id: string
+          id: string
+          relationship_type: string
+          xlsx_chunk_id: string
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string
+          document_chunk_id: string
+          id?: string
+          relationship_type: string
+          xlsx_chunk_id: string
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string
+          document_chunk_id?: string
+          id?: string
+          relationship_type?: string
+          xlsx_chunk_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "excel_to_chunk_links_document_chunk_id_fkey"
+            columns: ["document_chunk_id"]
+            isOneToOne: false
+            referencedRelation: "document_chunks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "excel_to_chunk_links_xlsx_chunk_id_fkey"
+            columns: ["xlsx_chunk_id"]
+            isOneToOne: false
+            referencedRelation: "xlsx_chunks"
             referencedColumns: ["id"]
           },
         ]
