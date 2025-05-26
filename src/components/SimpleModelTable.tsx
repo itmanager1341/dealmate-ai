@@ -100,7 +100,7 @@ export function SimpleModelTable({ dealId }: SimpleModelTableProps) {
   };
 
   const formatCost = (cost: number): string => {
-    return `$${cost.toFixed(4)}/1K`;
+    return `$${cost.toFixed(2)}/1M`;
   };
 
   const isModelCompatible = (model: AIModel, useCase: ModelUseCase): boolean => {
@@ -131,7 +131,7 @@ export function SimpleModelTable({ dealId }: SimpleModelTableProps) {
             AI Model Configuration
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Assign AI models to different analysis tasks. Costs shown are per 1,000 tokens.
+            Assign AI models to different analysis tasks. Costs shown are per 1 million tokens.
           </p>
         </CardHeader>
         <CardContent>
@@ -139,8 +139,8 @@ export function SimpleModelTable({ dealId }: SimpleModelTableProps) {
             <TableHeader>
               <TableRow>
                 <TableHead>Model</TableHead>
-                <TableHead>Input Cost</TableHead>
-                <TableHead>Output Cost</TableHead>
+                <TableHead>Input Cost (per 1M tokens)</TableHead>
+                <TableHead>Output Cost (per 1M tokens)</TableHead>
                 <TableHead>Capabilities</TableHead>
                 <TableHead>Description</TableHead>
                 {useCases.map(useCase => (
