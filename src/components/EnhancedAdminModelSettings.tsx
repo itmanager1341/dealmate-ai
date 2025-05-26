@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -20,9 +21,7 @@ import {
   CheckCircle,
   Target,
   Wrench,
-  RotateCcw,
-  Download,
-  Upload
+  RotateCcw
 } from 'lucide-react';
 import type { AIModel, ModelConfiguration, ModelUseCase, ConfigurationPreset } from '@/types/models';
 
@@ -83,13 +82,25 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
   const loadData = async () => {
     try {
       setLoading(true);
+      console.log('Loading data for dealId:', dealId);
+      
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
+      console.log('Current user:', user?.id);
+
+      if (!user) {
+        console.warn('No user found');
+        setLoading(false);
+        return;
+      }
 
       const [modelsData, configurationsData] = await Promise.all([
         ModelService.getAvailableModels(),
-        user ? ModelService.getUserModelConfigurations(user.id, dealId) : []
+        ModelService.getUserModelConfigurations(user.id, dealId)
       ]);
+
+      console.log('Loaded models:', modelsData);
+      console.log('Loaded configurations:', configurationsData);
 
       setModels(modelsData);
       setConfigurations(configurationsData);
@@ -102,12 +113,17 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
   };
 
   const saveConfiguration = async (useCase: ModelUseCase, modelId?: string, isTestingMode?: boolean) => {
-    if (!user) return;
+    if (!user) {
+      console.warn('No user found for saving configuration');
+      return;
+    }
 
     const savingKey = `${useCase}-${modelId ? 'model' : 'testing'}`;
     setSaving(prev => ({ ...prev, [savingKey]: true }));
 
     try {
+      console.log('Saving configuration:', { useCase, modelId, isTestingMode });
+      
       await EnhancedModelService.saveModelConfiguration(
         user.id,
         dealId || null,
@@ -116,11 +132,12 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
         isTestingMode
       );
 
+      // Reload data to reflect changes
       await loadData();
-      toast.success('Configuration saved');
+      toast.success('Configuration saved successfully');
     } catch (error) {
       console.error('Error saving configuration:', error);
-      toast.error('Failed to save configuration');
+      toast.error('Failed to save configuration. Please try again.');
     } finally {
       setSaving(prev => ({ ...prev, [savingKey]: false }));
     }
@@ -132,6 +149,8 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
     setSaving(prev => ({ ...prev, bulk: true }));
 
     try {
+      console.log('Executing bulk action:', action);
+
       if (action === 'set-all-testing') {
         await EnhancedModelService.bulkUpdateConfigurations(user.id, dealId || null, [
           { applyToAll: true, isTestingMode: true }
@@ -155,7 +174,7 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
       await loadData();
     } catch (error) {
       console.error('Error in bulk action:', error);
-      toast.error('Failed to apply bulk action');
+      toast.error(`Failed to ${action.replace('-', ' ')}. Please try again.`);
     } finally {
       setSaving(prev => ({ ...prev, bulk: false }));
     }
@@ -167,12 +186,13 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
     setSaving(prev => ({ ...prev, [preset]: true }));
 
     try {
+      console.log('Applying preset:', preset);
       await EnhancedModelService.applyPreset(user.id, dealId || null, preset, models);
       await loadData();
       toast.success(`${preset.charAt(0).toUpperCase() + preset.slice(1).replace('-', ' ')} preset applied`);
     } catch (error) {
       console.error('Error applying preset:', error);
-      toast.error('Failed to apply preset');
+      toast.error('Failed to apply preset. Please try again.');
     } finally {
       setSaving(prev => ({ ...prev, [preset]: false }));
     }
@@ -193,7 +213,7 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
   };
 
   const formatCost = (costPer1k: number): string => {
-    return `$${(costPer1k).toFixed(4)}/1K tokens`;
+    return `$${costPer1k.toFixed(4)}/1K tokens`;
   };
 
   const getCostEfficiencyColor = (efficiency: string) => {
@@ -235,7 +255,7 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
         </div>
       </div>
 
-      {/* Bulk Actions */}
+      {/* Quick Actions */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Quick Actions</CardTitle>
@@ -250,7 +270,7 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
               className="flex items-center gap-2"
             >
               <Zap className="h-4 w-4" />
-              Set All to Testing
+              {saving.bulk ? 'Updating...' : 'Set All to Testing'}
             </Button>
             <Button
               variant="outline"
@@ -260,7 +280,7 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
               className="flex items-center gap-2"
             >
               <Target className="h-4 w-4" />
-              Apply Recommended
+              {saving.bulk ? 'Applying...' : 'Apply Recommended'}
             </Button>
             <Button
               variant="outline"
@@ -270,11 +290,11 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
               className="flex items-center gap-2"
             >
               <RotateCcw className="h-4 w-4" />
-              Reset to Defaults
+              {saving.bulk ? 'Resetting...' : 'Reset to Defaults'}
             </Button>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 items-center">
             <Label className="text-sm font-medium">Presets:</Label>
             <Button
               variant="ghost"
@@ -282,7 +302,7 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
               onClick={() => applyPreset('cost-optimized')}
               disabled={saving['cost-optimized']}
             >
-              Cost-Optimized
+              {saving['cost-optimized'] ? 'Applying...' : 'Cost-Optimized'}
             </Button>
             <Button
               variant="ghost"
@@ -290,7 +310,7 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
               onClick={() => applyPreset('performance-optimized')}
               disabled={saving['performance-optimized']}
             >
-              Performance
+              {saving['performance-optimized'] ? 'Applying...' : 'Performance'}
             </Button>
             <Button
               variant="ghost"
@@ -298,7 +318,7 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
               onClick={() => applyPreset('balanced')}
               disabled={saving['balanced']}
             >
-              Balanced
+              {saving['balanced'] ? 'Applying...' : 'Balanced'}
             </Button>
           </div>
         </CardContent>

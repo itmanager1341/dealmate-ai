@@ -73,14 +73,14 @@ export class EnhancedModelService {
         recommendation = {
           level: 'recommended',
           reason: useCaseRec.reasons[Object.keys(useCaseRec.reasons).find(key => model.name.includes(key)) || ''] || 'Recommended for this use case',
-          costEfficiency: model.cost_per_input_token < 0.01 ? 'high' : model.cost_per_input_token < 0.03 ? 'medium' : 'low',
+          costEfficiency: model.cost_per_input_token < 10 ? 'high' : model.cost_per_input_token < 30 ? 'medium' : 'low',
           qualityRating: 8
         };
       } else if (useCaseRec.acceptable.some(name => model.name.includes(name))) {
         recommendation = {
           level: 'acceptable',
           reason: useCaseRec.reasons[Object.keys(useCaseRec.reasons).find(key => model.name.includes(key)) || ''] || 'Acceptable for this use case',
-          costEfficiency: model.cost_per_input_token < 0.01 ? 'high' : model.cost_per_input_token < 0.03 ? 'medium' : 'low',
+          costEfficiency: model.cost_per_input_token < 10 ? 'high' : model.cost_per_input_token < 30 ? 'medium' : 'low',
           qualityRating: 6
         };
       }
@@ -105,14 +105,16 @@ export class EnhancedModelService {
     isTestingMode?: boolean
   ): Promise<void> {
     try {
+      console.log('Saving model configuration:', { userId, dealId, useCase, modelId, isTestingMode });
+
       // Get current configuration
       const { data: existing } = await supabase
         .from('model_configurations')
         .select('*')
         .eq('user_id', userId)
         .eq('use_case', useCase)
-        .eq('deal_id', dealId || null)
-        .single();
+        .eq('deal_id', dealId)
+        .maybeSingle();
 
       const updateData: any = {
         user_id: userId,
@@ -131,26 +133,35 @@ export class EnhancedModelService {
         if (isTestingMode === undefined) updateData.is_testing_mode = existing.is_testing_mode;
       }
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('model_configurations')
         .upsert(updateData, {
           onConflict: 'user_id,deal_id,use_case'
-        });
+        })
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error saving configuration:', error);
+        throw error;
+      }
+
+      console.log('Configuration saved successfully:', data);
     } catch (error) {
       console.error('Error saving model configuration:', error);
       throw error;
     }
   }
 
-  // Bulk configuration updates
+  // Bulk configuration updates with improved error handling
   static async bulkUpdateConfigurations(
     userId: string,
     dealId: string | null,
     updates: BulkConfigurationUpdate[]
   ): Promise<void> {
     try {
+      console.log('Starting bulk update:', { userId, dealId, updates });
+
       for (const update of updates) {
         if (update.applyToAll) {
           // Apply to all use cases
@@ -182,6 +193,8 @@ export class EnhancedModelService {
           );
         }
       }
+
+      console.log('Bulk update completed successfully');
     } catch (error) {
       console.error('Error in bulk update:', error);
       throw error;
@@ -208,8 +221,14 @@ export class EnhancedModelService {
 
   // Get preset configurations
   static getPresetConfigurations(preset: ConfigurationPreset, models: AIModel[]): Record<ModelUseCase, { modelId: string; isTestingMode: boolean }> {
-    const getModelByName = (namePattern: string) => 
-      models.find(m => m.name.toLowerCase().includes(namePattern.toLowerCase()))?.id || models[0]?.id;
+    const getModelByName = (namePattern: string) => {
+      const found = models.find(m => m.name.toLowerCase().includes(namePattern.toLowerCase()));
+      if (!found) {
+        console.warn(`Model not found for pattern: ${namePattern}`);
+        return models[0]?.id || '';
+      }
+      return found.id;
+    };
 
     const configs = {
       'cost-optimized': {
