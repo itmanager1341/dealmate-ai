@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -165,7 +164,7 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
   const applyPreset = async (preset: ConfigurationPreset) => {
     if (!user) return;
 
-    setSaving(prev => ({ ...prev, preset }));
+    setSaving(prev => ({ ...prev, [preset]: true }));
 
     try {
       await EnhancedModelService.applyPreset(user.id, dealId || null, preset, models);
@@ -175,7 +174,7 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
       console.error('Error applying preset:', error);
       toast.error('Failed to apply preset');
     } finally {
-      setSaving(prev => ({ ...prev, preset: false }));
+      setSaving(prev => ({ ...prev, [preset]: false }));
     }
   };
 
@@ -281,7 +280,7 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
               variant="ghost"
               size="sm"
               onClick={() => applyPreset('cost-optimized')}
-              disabled={saving.preset}
+              disabled={saving['cost-optimized']}
             >
               Cost-Optimized
             </Button>
@@ -289,7 +288,7 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
               variant="ghost"
               size="sm"
               onClick={() => applyPreset('performance-optimized')}
-              disabled={saving.preset}
+              disabled={saving['performance-optimized']}
             >
               Performance
             </Button>
@@ -297,7 +296,7 @@ export function EnhancedAdminModelSettings({ dealId }: EnhancedAdminModelSetting
               variant="ghost"
               size="sm"
               onClick={() => applyPreset('balanced')}
-              disabled={saving.preset}
+              disabled={saving['balanced']}
             >
               Balanced
             </Button>

@@ -1,6 +1,6 @@
 
 import { supabase } from '@/lib/supabase';
-import type { AIModel, ModelConfiguration, ModelUseCase, BulkConfigurationUpdate, ConfigurationPreset } from '@/types/models';
+import type { AIModel, ModelConfiguration, ModelUseCase, BulkConfigurationUpdate, ConfigurationPreset, ModelRecommendation } from '@/types/models';
 
 export class EnhancedModelService {
   // Get model recommendations for a specific use case
@@ -62,7 +62,12 @@ export class EnhancedModelService {
     if (!useCaseRec) return models;
 
     return models.map(model => {
-      let recommendation = { level: 'not_recommended' as const, reason: '', costEfficiency: 'low' as const, qualityRating: 5 };
+      let recommendation: ModelRecommendation = { 
+        level: 'not_recommended', 
+        reason: 'Not recommended for this use case', 
+        costEfficiency: 'low', 
+        qualityRating: 5 
+      };
 
       if (useCaseRec.recommended.some(name => model.name.includes(name))) {
         recommendation = {
