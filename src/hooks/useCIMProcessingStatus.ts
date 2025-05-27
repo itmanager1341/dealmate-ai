@@ -1,6 +1,6 @@
-
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { completeStuckProcessingJobs } from '@/utils/processingJobsApi';
 
 interface ProcessingJob {
   id: string;
@@ -88,6 +88,9 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
         const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
         
         if (analysisTime > fiveMinutesAgo) {
+          // Try to fix any stuck processing jobs
+          await completeStuckProcessingJobs(dealId, 'cim_analysis');
+          
           setStatus(prev => ({
             ...prev,
             isProcessing: false,

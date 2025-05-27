@@ -1,4 +1,3 @@
-
 import { supabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/supabase';
 
@@ -73,6 +72,52 @@ export const updateProcessingJob = async (params: UpdateProcessingJobParams) => 
   } catch (error) {
     console.error('Error updating processing job:', error);
     throw error;
+  }
+};
+
+export const completeStuckProcessingJobs = async (dealId: string, jobType: string = 'cim_analysis') => {
+  try {
+    // First check if there's a completed CIM analysis for this deal
+    const { data: analysis, error: analysisError } = await supabase
+      .from('cim_analysis')
+      .select('*')
+      .eq('deal_id', dealId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (analysisError) {
+      console.error('Error checking CIM analysis:', analysisError);
+      return null;
+    }
+
+    // If we have a completed analysis, mark any stuck processing jobs as completed
+    if (analysis && analysis.length > 0) {
+      const { data: updatedJobs, error: updateError } = await supabase
+        .from('processing_jobs')
+        .update({
+          status: 'completed',
+          progress: 100,
+          current_step: 'complete',
+          completed_at: new Date().toISOString()
+        })
+        .eq('deal_id', dealId)
+        .eq('job_type', jobType)
+        .in('status', ['pending', 'processing'])
+        .select();
+
+      if (updateError) {
+        console.error('Error updating stuck processing jobs:', updateError);
+        return null;
+      }
+
+      console.log('Updated stuck processing jobs:', updatedJobs);
+      return updatedJobs;
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error completing stuck processing jobs:', error);
+    return null;
   }
 };
 

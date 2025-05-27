@@ -12,6 +12,7 @@ export type Database = {
       agent_logs: {
         Row: {
           agent_name: string | null
+          agent_type: string | null
           created_at: string | null
           error_message: string | null
           id: string
@@ -21,6 +22,7 @@ export type Database = {
         }
         Insert: {
           agent_name?: string | null
+          agent_type?: string | null
           created_at?: string | null
           error_message?: string | null
           id?: string
@@ -30,6 +32,7 @@ export type Database = {
         }
         Update: {
           agent_name?: string | null
+          agent_type?: string | null
           created_at?: string | null
           error_message?: string | null
           id?: string
@@ -685,6 +688,57 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      processing_jobs: {
+        Row: {
+          agent_results: Json | null
+          completed_at: string | null
+          created_at: string
+          current_step: string | null
+          deal_id: string
+          document_id: string | null
+          error_message: string | null
+          id: string
+          job_type: string
+          progress: number
+          started_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          agent_results?: Json | null
+          completed_at?: string | null
+          created_at?: string
+          current_step?: string | null
+          deal_id: string
+          document_id?: string | null
+          error_message?: string | null
+          id?: string
+          job_type?: string
+          progress?: number
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          agent_results?: Json | null
+          completed_at?: string | null
+          created_at?: string
+          current_step?: string | null
+          deal_id?: string
+          document_id?: string | null
+          error_message?: string | null
+          id?: string
+          job_type?: string
+          progress?: number
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       transcripts: {
         Row: {
