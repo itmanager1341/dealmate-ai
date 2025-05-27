@@ -30,7 +30,9 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { processFile, processCIM, checkAIServerHealth } from "../utils/aiApi";
-import { CIMProcessingProgress } from "./CIMProcessingProgress";
+import { EnhancedCIMProcessingProgress } from "./EnhancedCIMProcessingProgress";
+import { useCIMProcessingStatus } from "../hooks/useCIMProcessingStatus";
+import { createProcessingJob, updateProcessingJob } from "../utils/processingJobsApi";
 
 interface DocumentLibraryProps {
   dealId: string;
@@ -44,24 +46,11 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
   const [processingDocs, setProcessingDocs] = useState<Set<string>>(new Set());
-  const [processingCIMDocs, setProcessingCIMDocs] = useState<Set<string>>(new Set());
   const [isServerHealthy, setIsServerHealthy] = useState<boolean | null>(null);
   const [processingProgress, setProcessingProgress] = useState<Map<string, number>>(new Map());
   
-  // Enhanced CIM processing state
-  const [cimProcessingState, setCimProcessingState] = useState<{
-    documentId: string | null;
-    fileName: string;
-    progress: number;
-    currentStep: string;
-    error: string | null;
-  }>({
-    documentId: null,
-    fileName: '',
-    progress: 0,
-    currentStep: 'validation',
-    error: null
-  });
+  // Use the new CIM processing status hook
+  const cimProcessingStatus = useCIMProcessingStatus(dealId);
 
   useEffect(() => {
     fetchDocuments();
@@ -126,8 +115,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
     console.log(`Attempting to delete document ${documentId} with file path: ${filePath}`);
 
     try {
-      // First, delete related records from ai_outputs table
-      console.log(`Deleting related AI outputs for document: ${documentId}`);
+      // Delete related records from various tables
       const { error: aiOutputsError } = await supabase
         .from('ai_outputs')
         .delete()
@@ -136,12 +124,8 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       if (aiOutputsError) {
         console.error("Error deleting AI outputs:", aiOutputsError);
         toast.warning("Failed to delete AI outputs, but continuing with document deletion");
-      } else {
-        console.log("AI outputs deleted successfully");
       }
 
-      // Delete related records from cim_analysis table
-      console.log(`Deleting related CIM analysis for document: ${documentId}`);
       const { error: cimError } = await supabase
         .from('cim_analysis')
         .delete()
@@ -150,11 +134,9 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       if (cimError) {
         console.error("Error deleting CIM analysis:", cimError);
         toast.warning("Failed to delete CIM analysis, but continuing with document deletion");
-      } else {
-        console.log("CIM analysis deleted successfully");
       }
 
-      // Only attempt to delete from storage if we have a valid file path
+      // Delete from storage if file path exists
       if (filePath && filePath.trim() !== '') {
         console.log(`Deleting file from storage: ${filePath}`);
         const { error: storageError } = await supabase.storage
@@ -163,30 +145,19 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
 
         if (storageError) {
           console.error("Storage deletion error:", storageError);
-          // Don't throw here - we still want to delete the database record
           toast.warning("File may not exist in storage, but will remove database record");
-        } else {
-          console.log("File successfully deleted from storage");
         }
-      } else {
-        console.log("No valid file path found, skipping storage deletion");
-        toast.warning("No file path found, removing database record only");
       }
 
-      // Finally, delete from documents table
-      console.log(`Deleting document record from database: ${documentId}`);
+      // Delete document record
       const { error: dbError } = await supabase
         .from('documents')
         .delete()
         .eq('id', documentId);
 
-      if (dbError) {
-        console.error("Database deletion error:", dbError);
-        throw dbError;
-      }
+      if (dbError) throw dbError;
 
-      console.log("Document successfully deleted from database");
-      toast.success("Document and all related data deleted successfully");
+      toast.success("Document deleted successfully");
       fetchDocuments();
       onDocumentUpdate?.();
     } catch (error) {
@@ -221,16 +192,13 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
     const fileName = document.name || document.file_name || '';
     const fileSize = document.size || 0;
     
-    // Check if it's a PDF
     if (document.file_type !== 'pdf') return false;
     
-    // Check for CIM keywords in filename
     const cimKeywords = ['cim', 'confidential information memorandum', 'investment memo', 'offering memo'];
     const hasKeyword = cimKeywords.some(keyword => 
       fileName.toLowerCase().includes(keyword)
     );
     
-    // Check file size (typical CIMs are > 2MB)
     const isLargeEnough = fileSize > 2 * 1024 * 1024; // 2MB
     
     return hasKeyword || isLargeEnough;
@@ -254,30 +222,20 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
 
       console.log(`Starting AI processing for document: ${document.name || document.file_name}`);
       
-      // Download the file from storage
       const { data: fileData, error: downloadError } = await supabase.storage
         .from('documents')
         .download(storageFilePath);
 
-      if (downloadError) {
-        console.error("Error downloading file:", downloadError);
-        throw downloadError;
-      }
+      if (downloadError) throw downloadError;
 
       const fileName = document.name || document.file_name || 'unknown';
       const file = new File([fileData], fileName, { 
         type: getFileTypeFromExtension(document.file_type) 
       });
 
-      console.log(`Processing file: ${fileName} (${file.size} bytes)`);
-      
-      // Call AI processing with document ID to enable data storage
       const result = await processFile(file, dealId, documentId);
       
       if (result.success) {
-        console.log(`AI processing successful for ${fileName}:`, result.data);
-        
-        // Update document as processed in database
         const { error: updateError } = await supabase
           .from('documents')
           .update({ 
@@ -286,19 +244,12 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
           })
           .eq('id', documentId);
 
-        if (updateError) {
-          console.error("Error updating document status:", updateError);
-          throw updateError;
-        }
+        if (updateError) throw updateError;
 
-        toast.success(`Successfully processed ${fileName} - Data extracted and saved`);
-        
-        // Refresh documents list
+        toast.success(`Successfully processed ${fileName}`);
         fetchDocuments();
         onDocumentUpdate?.();
-        
       } else {
-        console.error(`AI processing failed for ${fileName}:`, result.error);
         throw new Error(result.error || 'Processing failed');
       }
       
@@ -323,80 +274,65 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
     const documentId = document.id;
     const fileName = document.name || document.file_name || 'unknown';
     
-    // Initialize CIM processing state
-    setCimProcessingState({
-      documentId,
-      fileName,
-      progress: 0,
-      currentStep: 'validation',
-      error: null
-    });
-    
-    setProcessingCIMDocs(prev => new Set(prev).add(documentId));
-
     try {
+      // Create processing job in database
+      const processingJob = await createProcessingJob({
+        dealId,
+        documentId,
+        jobType: 'cim_analysis',
+        currentStep: 'validation'
+      });
+
+      // Start processing status
+      cimProcessingStatus.startProcessing(processingJob.id, fileName);
+      
       const storageFilePath = document.file_path || document.storage_path;
       if (!storageFilePath) {
         throw new Error("No file path found for document");
       }
 
+      // Update job to processing status
+      await updateProcessingJob({
+        jobId: processingJob.id,
+        status: 'processing',
+        currentStep: 'validation',
+        progress: 10
+      });
+
       console.log(`Starting CIM analysis for document: ${fileName}`);
       toast.info("Starting comprehensive CIM analysis...", { duration: 3000 });
       
-      // Step 1: Validation (0-20%)
-      setCimProcessingState(prev => ({ 
-        ...prev, 
-        progress: 10, 
-        currentStep: 'validation' 
-      }));
-      
-      // Download the file from storage
+      // Download file
       const { data: fileData, error: downloadError } = await supabase.storage
         .from('documents')
         .download(storageFilePath);
 
-      if (downloadError) {
-        console.error("Error downloading file:", downloadError);
-        throw downloadError;
-      }
+      if (downloadError) throw downloadError;
 
-      setCimProcessingState(prev => ({ 
-        ...prev, 
-        progress: 20, 
-        currentStep: 'analysis' 
-      }));
-
-      const file = new File([fileData], fileName, { 
-        type: 'application/pdf'
+      // Update progress
+      await updateProcessingJob({
+        jobId: processingJob.id,
+        currentStep: 'analysis',
+        progress: 20
       });
 
-      console.log(`Processing CIM file: ${fileName} (${file.size} bytes)`);
+      const file = new File([fileData], fileName, { type: 'application/pdf' });
       
-      // Step 2: AI Analysis (20-80%)
-      // Simulate progress during analysis
-      const analysisInterval = setInterval(() => {
-        setCimProcessingState(prev => ({
-          ...prev,
-          progress: Math.min(prev.progress + 5, 75)
-        }));
-      }, 1000);
-      
-      // Call CIM processing with document ID to enable data storage
+      // Call CIM processing
       const result = await processCIM(file, dealId, documentId);
-      
-      clearInterval(analysisInterval);
       
       if (result.success && result.data) {
         console.log(`CIM processing successful for ${fileName}:`, result.data);
         
-        // Step 3: Storage (80-90%)
-        setCimProcessingState(prev => ({ 
-          ...prev, 
-          progress: 85, 
-          currentStep: 'storage' 
-        }));
+        // Update job to storage phase
+        await updateProcessingJob({
+          jobId: processingJob.id,
+          currentStep: 'storage',
+          progress: 85,
+          agentResults: result.data.results_summary || {}
+        });
         
-        // Update document as processed in database
+        // Update document status
         const { error: updateError } = await supabase
           .from('documents')
           .update({ 
@@ -405,20 +341,18 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
           })
           .eq('id', documentId);
 
-        if (updateError) {
-          console.error("Error updating document status:", updateError);
-          throw updateError;
-        }
+        if (updateError) throw updateError;
 
-        // Step 4: Complete (90-100%)
-        setCimProcessingState(prev => ({ 
-          ...prev, 
-          progress: 100, 
-          currentStep: 'complete' 
-        }));
+        // Complete the job
+        await updateProcessingJob({
+          jobId: processingJob.id,
+          status: 'completed',
+          currentStep: 'complete',
+          progress: 100
+        });
 
-        // Show success message with key insights
-        const analysisData = result.data.parsed_analysis || result.data;
+        // Handle response structure
+        const analysisData = result.data.parsed_analysis || result.data.analysis || result.data;
         const grade = analysisData?.investment_grade || 'N/A';
         const recommendation = analysisData?.recommendation?.action || 'N/A';
         
@@ -427,28 +361,14 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
           { duration: 5000 }
         );
         
-        // Call the callback to notify parent component with the parsed analysis
         if (onCIMAnalysisComplete && analysisData) {
           onCIMAnalysisComplete(analysisData);
         }
         
-        // Refresh documents list
         fetchDocuments();
         onDocumentUpdate?.();
         
-        // Clear processing state after a delay
-        setTimeout(() => {
-          setCimProcessingState({
-            documentId: null,
-            fileName: '',
-            progress: 0,
-            currentStep: 'validation',
-            error: null
-          });
-        }, 3000);
-        
       } else {
-        console.error(`CIM processing failed for ${fileName}:`, result.error);
         throw new Error(result.error || 'CIM processing failed');
       }
       
@@ -456,30 +376,17 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       console.error(`Error processing CIM ${fileName}:`, error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       
-      setCimProcessingState(prev => ({ 
-        ...prev, 
-        error: errorMessage,
-        currentStep: 'error'
-      }));
-      
-      toast.error(`Failed to process CIM ${fileName}: ${errorMessage}`);
-      
-      // Clear error state after delay
-      setTimeout(() => {
-        setCimProcessingState({
-          documentId: null,
-          fileName: '',
-          progress: 0,
-          currentStep: 'validation',
-          error: null
+      // Update job with error
+      if (cimProcessingStatus.jobId) {
+        await updateProcessingJob({
+          jobId: cimProcessingStatus.jobId,
+          status: 'failed',
+          errorMessage
         });
-      }, 5000);
-    } finally {
-      setProcessingCIMDocs(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(documentId);
-        return newSet;
-      });
+      }
+      
+      cimProcessingStatus.setError(errorMessage);
+      toast.error(`Failed to process CIM ${fileName}: ${errorMessage}`);
     }
   };
 
@@ -591,7 +498,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
   const unprocessedCount = documents.filter(doc => !doc.processed).length;
   const cimCount = documents.filter(doc => isPotentialCIM(doc)).length;
   const processedCIMCount = documents.filter(doc => doc.classified_as === 'CIM Analysis').length;
-  const processingCount = processingDocs.size + processingCIMDocs.size;
+  const processingCount = processingDocs.size + (cimProcessingStatus.isProcessing ? 1 : 0);
 
   if (loading) {
     return (
@@ -607,14 +514,15 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
 
   return (
     <div className="space-y-6">
-      {/* CIM Processing Progress */}
-      {cimProcessingState.documentId && (
-        <CIMProcessingProgress
-          isProcessing={processingCIMDocs.has(cimProcessingState.documentId)}
-          progress={cimProcessingState.progress}
-          currentStep={cimProcessingState.currentStep}
-          fileName={cimProcessingState.fileName}
-          error={cimProcessingState.error}
+      {/* Enhanced CIM Processing Progress */}
+      {cimProcessingStatus.isProcessing && (
+        <EnhancedCIMProcessingProgress
+          isProcessing={cimProcessingStatus.isProcessing}
+          progress={cimProcessingStatus.progress}
+          currentStep={cimProcessingStatus.currentStep}
+          fileName="CIM Document"
+          error={cimProcessingStatus.error}
+          agentResults={cimProcessingStatus.agentResults}
         />
       )}
 
@@ -748,7 +656,6 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
               <TableBody>
                 {filteredDocuments.map((document) => {
                   const isProcessing = processingDocs.has(document.id);
-                  const isProcessingCIM = processingCIMDocs.has(document.id);
                   const displayName = document.name || document.file_name || 'Unknown';
                   const filePath = document.file_path || document.storage_path || '';
                   const potentialCIM = isPotentialCIM(document);
@@ -791,7 +698,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
                         {document.size ? `${(document.size / 1024 / 1024).toFixed(2)} MB` : 'Unknown'}
                       </TableCell>
                       <TableCell>
-                        {getStatusBadge(document.processed, isProcessing || isProcessingCIM, document.classified_as, document.id)}
+                        {getStatusBadge(document.processed, isProcessing, document.classified_as, document.id)}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -806,11 +713,11 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
                               variant="ghost"
                               size="icon"
                               onClick={() => processCIMDocument(document)}
-                              disabled={isProcessingCIM || !isServerHealthy}
+                              disabled={cimProcessingStatus.isProcessing || !isServerHealthy}
                               title="Process as CIM"
                               className="hover:bg-purple-50 hover:text-purple-600"
                             >
-                              {isProcessingCIM ? (
+                              {cimProcessingStatus.isProcessing ? (
                                 <Loader className="h-4 w-4 animate-spin" />
                               ) : (
                                 <Award className="h-4 w-4" />
