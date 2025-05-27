@@ -1,4 +1,3 @@
-
 // AI API Integration for DealMate Frontend - Hybrid Enhanced Version
 
 import { supabase } from '@/lib/supabase';
@@ -68,8 +67,8 @@ export interface DealFile {
   deal_id: string;
 }
 
-// Helper function to get authentication headers
-async function getAuthHeaders(): Promise<{ headers: Record<string, string>; userId: string | null }> {
+// Helper function to get authentication headers with optional Content-Type
+async function getAuthHeaders(includeContentType: boolean = true): Promise<{ headers: Record<string, string>; userId: string | null }> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     const { data: { user } } = await supabase.auth.getUser();
@@ -79,10 +78,14 @@ async function getAuthHeaders(): Promise<{ headers: Record<string, string>; user
       return { headers: {}, userId: null };
     }
     
-    const headers = {
+    const headers: Record<string, string> = {
       'Authorization': `Bearer ${session.access_token}`,
-      'Content-Type': 'application/json',
     };
+    
+    // Only include Content-Type when explicitly requested (for JSON requests)
+    if (includeContentType) {
+      headers['Content-Type'] = 'application/json';
+    }
     
     console.log('Authentication headers prepared for AI server');
     return { headers, userId: user?.id || null };
@@ -683,8 +686,8 @@ export async function processCIM(file: File, dealId: string, documentId?: string
   try {
     console.log(`Starting enhanced CIM processing for ${file.name}`);
     
-    // Get authentication headers and user ID
-    const { headers: authHeaders, userId } = await getAuthHeaders();
+    // Get authentication headers WITHOUT Content-Type for FormData
+    const { headers: authHeaders, userId } = await getAuthHeaders(false);
     
     if (!userId) {
       console.error('No authenticated user found for CIM processing');
@@ -730,10 +733,7 @@ export async function processCIM(file: File, dealId: string, documentId?: string
     console.log('Sending authenticated CIM processing request to AI server...');
     const response = await fetch(`${AI_SERVER_URL}/process-cim`, {
       method: 'POST',
-      headers: {
-        ...authHeaders,
-        // Remove Content-Type to let browser set it for FormData
-      },
+      headers: authHeaders, // Only includes Authorization header, no Content-Type
       body: formData,
       mode: 'cors',
     });
@@ -853,7 +853,8 @@ export async function processCIM(file: File, dealId: string, documentId?: string
 // Transcribe audio files (MP3, WAV) with authentication
 export async function transcribeAudio(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
-    const { headers: authHeaders, userId } = await getAuthHeaders();
+    // Get auth headers WITHOUT Content-Type for FormData
+    const { headers: authHeaders, userId } = await getAuthHeaders(false);
     
     if (!userId) {
       return {
@@ -869,7 +870,7 @@ export async function transcribeAudio(file: File, dealId: string, documentId?: s
 
     const response = await fetch(`${AI_SERVER_URL}/transcribe`, {
       method: 'POST',
-      headers: authHeaders,
+      headers: authHeaders, // Only Authorization header
       body: formData,
       mode: 'cors',
     });
@@ -904,7 +905,8 @@ export async function transcribeAudio(file: File, dealId: string, documentId?: s
 // Process Excel files for financial metrics with authentication
 export async function processExcel(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
-    const { headers: authHeaders, userId } = await getAuthHeaders();
+    // Get auth headers WITHOUT Content-Type for FormData
+    const { headers: authHeaders, userId } = await getAuthHeaders(false);
     
     if (!userId) {
       return {
@@ -920,7 +922,7 @@ export async function processExcel(file: File, dealId: string, documentId?: stri
 
     const response = await fetch(`${AI_SERVER_URL}/process-excel`, {
       method: 'POST',
-      headers: authHeaders,
+      headers: authHeaders, // Only Authorization header
       body: formData,
       mode: 'cors',
     });
@@ -955,7 +957,8 @@ export async function processExcel(file: File, dealId: string, documentId?: stri
 // Process documents (PDF, DOCX) for business analysis with authentication
 export async function processDocument(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
-    const { headers: authHeaders, userId } = await getAuthHeaders();
+    // Get auth headers WITHOUT Content-Type for FormData
+    const { headers: authHeaders, userId } = await getAuthHeaders(false);
     
     if (!userId) {
       return {
@@ -971,7 +974,7 @@ export async function processDocument(file: File, dealId: string, documentId?: s
 
     const response = await fetch(`${AI_SERVER_URL}/process-document`, {
       method: 'POST',
-      headers: authHeaders,
+      headers: authHeaders, // Only Authorization header
       body: formData,
       mode: 'cors',
     });
@@ -1006,7 +1009,8 @@ export async function processDocument(file: File, dealId: string, documentId?: s
 // Generate investment memo from processed data with authentication
 export async function generateMemo(dealId: string, requestedSections?: string[]): Promise<AIResponse> {
   try {
-    const { headers: authHeaders, userId } = await getAuthHeaders();
+    // Get auth headers WITH Content-Type for JSON requests
+    const { headers: authHeaders, userId } = await getAuthHeaders(true);
     
     if (!userId) {
       return {
@@ -1017,10 +1021,7 @@ export async function generateMemo(dealId: string, requestedSections?: string[])
     
     const response = await fetch(`${AI_SERVER_URL}/generate-memo`, {
       method: 'POST',
-      headers: {
-        ...authHeaders,
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders, // Includes both Authorization and Content-Type
       body: JSON.stringify({
         deal_id: dealId,
         user_id: userId,
