@@ -1,3 +1,4 @@
+
 // AI API Integration for DealMate Frontend - Hybrid Enhanced Version
 
 import { supabase } from '@/lib/supabase';
@@ -65,6 +66,30 @@ export interface DealFile {
   type: string;
   url: string;
   deal_id: string;
+}
+
+// Helper function to get authentication headers
+async function getAuthHeaders(): Promise<{ headers: Record<string, string>; userId: string | null }> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!session?.access_token) {
+      console.warn('No valid session found for AI API request');
+      return { headers: {}, userId: null };
+    }
+    
+    const headers = {
+      'Authorization': `Bearer ${session.access_token}`,
+      'Content-Type': 'application/json',
+    };
+    
+    console.log('Authentication headers prepared for AI server');
+    return { headers, userId: user?.id || null };
+  } catch (error) {
+    console.error('Error getting auth headers:', error);
+    return { headers: {}, userId: null };
+  }
 }
 
 // Enhanced CIM file validation with comprehensive checks
@@ -658,6 +683,17 @@ export async function processCIM(file: File, dealId: string, documentId?: string
   try {
     console.log(`Starting enhanced CIM processing for ${file.name}`);
     
+    // Get authentication headers and user ID
+    const { headers: authHeaders, userId } = await getAuthHeaders();
+    
+    if (!userId) {
+      console.error('No authenticated user found for CIM processing');
+      return {
+        success: false,
+        error: 'Authentication required for CIM processing'
+      };
+    }
+    
     // Get selected model for CIM analysis
     selectedModelInfo = await getSelectedModel('cim_analysis', dealId);
     if (!selectedModelInfo) {
@@ -680,6 +716,7 @@ export async function processCIM(file: File, dealId: string, documentId?: string
     const formData = new FormData();
     formData.append('file', file);
     formData.append('deal_id', dealId);
+    formData.append('user_id', userId); // Add user_id as fallback
     if (documentId) {
       formData.append('document_id', documentId);
     }
@@ -690,9 +727,13 @@ export async function processCIM(file: File, dealId: string, documentId?: string
       formData.append('provider', selectedModelInfo.model.provider);
     }
 
-    console.log('Sending CIM processing request to AI server...');
+    console.log('Sending authenticated CIM processing request to AI server...');
     const response = await fetch(`${AI_SERVER_URL}/process-cim`, {
       method: 'POST',
+      headers: {
+        ...authHeaders,
+        // Remove Content-Type to let browser set it for FormData
+      },
       body: formData,
       mode: 'cors',
     });
@@ -713,7 +754,14 @@ export async function processCIM(file: File, dealId: string, documentId?: string
         );
       }
       
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
+      // Provide more specific error messages
+      if (response.status === 401) {
+        throw new Error('Authentication failed. Please try logging in again.');
+      } else if (response.status === 403) {
+        throw new Error('Access denied. Please check your permissions.');
+      } else {
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
     }
 
     const result: CIMProcessingResponse = await response.json();
@@ -802,21 +850,36 @@ export async function processCIM(file: File, dealId: string, documentId?: string
   }
 }
 
-// Transcribe audio files (MP3, WAV) - keep existing
+// Transcribe audio files (MP3, WAV) with authentication
 export async function transcribeAudio(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
+    const { headers: authHeaders, userId } = await getAuthHeaders();
+    
+    if (!userId) {
+      return {
+        success: false,
+        error: 'Authentication required for audio transcription'
+      };
+    }
+    
     const formData = new FormData();
     formData.append('file', file);
     formData.append('deal_id', dealId);
+    formData.append('user_id', userId);
 
     const response = await fetch(`${AI_SERVER_URL}/transcribe`, {
       method: 'POST',
+      headers: authHeaders,
       body: formData,
       mode: 'cors',
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorText = await response.text();
+      if (response.status === 401) {
+        throw new Error('Authentication failed. Please try logging in again.');
+      }
+      throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
@@ -838,21 +901,36 @@ export async function transcribeAudio(file: File, dealId: string, documentId?: s
   }
 }
 
-// Process Excel files for financial metrics - keep existing
+// Process Excel files for financial metrics with authentication
 export async function processExcel(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
+    const { headers: authHeaders, userId } = await getAuthHeaders();
+    
+    if (!userId) {
+      return {
+        success: false,
+        error: 'Authentication required for Excel processing'
+      };
+    }
+    
     const formData = new FormData();
     formData.append('file', file);
     formData.append('deal_id', dealId);
+    formData.append('user_id', userId);
 
     const response = await fetch(`${AI_SERVER_URL}/process-excel`, {
       method: 'POST',
+      headers: authHeaders,
       body: formData,
       mode: 'cors',
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorText = await response.text();
+      if (response.status === 401) {
+        throw new Error('Authentication failed. Please try logging in again.');
+      }
+      throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
@@ -874,21 +952,36 @@ export async function processExcel(file: File, dealId: string, documentId?: stri
   }
 }
 
-// Process documents (PDF, DOCX) for business analysis - keep existing
+// Process documents (PDF, DOCX) for business analysis with authentication
 export async function processDocument(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
+    const { headers: authHeaders, userId } = await getAuthHeaders();
+    
+    if (!userId) {
+      return {
+        success: false,
+        error: 'Authentication required for document processing'
+      };
+    }
+    
     const formData = new FormData();
     formData.append('file', file);
     formData.append('deal_id', dealId);
+    formData.append('user_id', userId);
 
     const response = await fetch(`${AI_SERVER_URL}/process-document`, {
       method: 'POST',
+      headers: authHeaders,
       body: formData,
       mode: 'cors',
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorText = await response.text();
+      if (response.status === 401) {
+        throw new Error('Authentication failed. Please try logging in again.');
+      }
+      throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
@@ -910,23 +1003,38 @@ export async function processDocument(file: File, dealId: string, documentId?: s
   }
 }
 
-// Generate investment memo from processed data - keep existing
+// Generate investment memo from processed data with authentication
 export async function generateMemo(dealId: string, requestedSections?: string[]): Promise<AIResponse> {
   try {
+    const { headers: authHeaders, userId } = await getAuthHeaders();
+    
+    if (!userId) {
+      return {
+        success: false,
+        error: 'Authentication required for memo generation'
+      };
+    }
+    
     const response = await fetch(`${AI_SERVER_URL}/generate-memo`, {
       method: 'POST',
       headers: {
+        ...authHeaders,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         deal_id: dealId,
+        user_id: userId,
         sections: requestedSections || ['executive_summary', 'financial_analysis', 'risks', 'recommendation']
       }),
       mode: 'cors',
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorText = await response.text();
+      if (response.status === 401) {
+        throw new Error('Authentication failed. Please try logging in again.');
+      }
+      throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
