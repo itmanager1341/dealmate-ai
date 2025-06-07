@@ -1,3 +1,4 @@
+
 import { supabase } from '@/lib/supabase';
 import type { 
   AIModel, 
@@ -205,7 +206,16 @@ export class ModelService {
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) throw error;
 
-    return data || [];
+    // Type assertion to handle the complex join query result
+    const typedData = data as (AgentLog & { model_usage_logs?: ModelUsageLog[] })[] | null;
+    
+    if (!typedData) return [];
+
+    // Transform the result to match our expected interface
+    return typedData.map(item => ({
+      ...item,
+      model_usage: item.model_usage_logs || []
+    }));
   }
 
   // Get model performance metrics
@@ -229,7 +239,7 @@ export class ModelService {
     if (error) throw error;
 
     // Process the data to calculate metrics
-    const logs = data || [];
+    const logs = (data || []) as ModelUsageLog[];
     const groupedByModel = logs.reduce((acc, log) => {
       const key = `${log.model_id}-${log.use_case}`;
       if (!acc[key]) {
@@ -321,7 +331,7 @@ export class ModelService {
     const { data, error } = await query;
     if (error) throw error;
 
-    const logs = data || [];
+    const logs = (data || []) as (ModelUsageLog & { ai_models?: { name: string; model_id: string } })[];
     
     const stats: ModelUsageStats = {
       total_requests: logs.length,
@@ -337,7 +347,7 @@ export class ModelService {
 
     // Calculate cost by model
     logs.forEach(log => {
-      const modelName = (log as any).ai_models?.name || 'Unknown';
+      const modelName = log.ai_models?.name || 'Unknown';
       stats.cost_by_model[modelName] = (stats.cost_by_model[modelName] || 0) + log.cost_usd;
     });
 
