@@ -1,6 +1,7 @@
 // AI API Integration for DealMate Frontend - Hybrid Enhanced Version
 
 import { supabase } from '@/lib/supabase';
+import type { ModelConfiguration, ModelUsageLog, AIModel, ModelUseCase, ModelUsageStats } from '@/types/models';
 
 const AI_SERVER_URL = 'https://zxjyxzhoz0d2e5-8000.proxy.runpod.net';
 
@@ -66,6 +67,248 @@ export interface DealFile {
   url: string;
   deal_id: string;
 }
+
+// Model API - Core model management functions
+export const modelApi = {
+  // Core configuration functions
+  getModelConfigs: async (params: { user_id?: string; deal_id?: string; use_case?: ModelUseCase } = {}): Promise<ModelConfiguration[]> => {
+    try {
+      let query = supabase.from('model_configurations').select('*');
+      
+      // Apply filters if provided
+      if (params.user_id) query = query.eq('user_id', params.user_id);
+      if (params.deal_id) query = query.eq('deal_id', params.deal_id);
+      if (params.use_case) query = query.eq('use_case', params.use_case);
+      
+      const { data, error } = await query.order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.error('Error fetching model configurations:', error);
+      throw new Error(`Failed to fetch model configurations: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  },
+
+  updateModelConfig: async (config: Omit<ModelConfiguration, 'id' | 'created_at' | 'updated_at'>): Promise<ModelConfiguration[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('model_configurations')
+        .upsert({
+          ...config,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id,deal_id,use_case'
+        })
+        .select();
+      
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.error('Error updating model configuration:', error);
+      throw new Error(`Failed to update model configuration: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  },
+
+  getModelUsageLogs: async (params: { 
+    deal_id?: string; 
+    model_id?: string; 
+    use_case?: ModelUseCase;
+    start_date?: Date;
+    end_date?: Date;
+    user_id?: string;
+  } = {}): Promise<ModelUsageLog[]> => {
+    try {
+      let query = supabase.from('model_usage_logs').select('*');
+      
+      // Apply filters
+      if (params.deal_id) query = query.eq('deal_id', params.deal_id);
+      if (params.model_id) query = query.eq('model_id', params.model_id);
+      if (params.use_case) query = query.eq('use_case', params.use_case);
+      if (params.user_id) query = query.eq('user_id', params.user_id);
+      if (params.start_date) query = query.gte('created_at', params.start_date.toISOString());
+      if (params.end_date) query = query.lte('created_at', params.end_date.toISOString());
+      
+      const { data, error } = await query.order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.error('Error fetching model usage logs:', error);
+      throw new Error(`Failed to fetch model usage logs: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  },
+
+  // Extended model management functions
+  getAvailableModels: async (useCase?: ModelUseCase): Promise<AIModel[]> => {
+    try {
+      let query = supabase
+        .from('ai_models')
+        .select('*')
+        .eq('is_active', true);
+      
+      if (useCase) {
+        query = query.eq('use_case', useCase);
+      }
+      
+      const { data, error } = await query
+        .order('use_case', { ascending: true })
+        .order('is_default', { ascending: false });
+      
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.error('Error fetching available models:', error);
+      throw new Error(`Failed to fetch available models: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  },
+
+  getEffectiveModelConfig: async (userId: string, dealId?: string, useCase?: ModelUseCase): Promise<string | null> => {
+    try {
+      const { data, error } = await supabase
+        .rpc('get_effective_model_config', {
+          p_user_id: userId,
+          p_deal_id: dealId || null,
+          p_use_case: useCase
+        });
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Error getting effective model config:', error);
+      throw new Error(`Failed to get effective model config: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  },
+
+  // Analytics functions
+  getModelUsageStats: async (params: {
+    userId?: string;
+    dealId?: string;
+    startDate?: Date;
+    endDate?: Date;
+  } = {}): Promise<ModelUsageStats> => {
+    try {
+      let query = supabase
+        .from('model_usage_logs')
+        .select(`
+          *,
+          ai_models!inner(name, model_id)
+        `);
+
+      if (params.userId) query = query.eq('user_id', params.userId);
+      if (params.dealId) query = query.eq('deal_id', params.dealId);
+      if (params.startDate) query = query.gte('created_at', params.startDate.toISOString());
+      if (params.endDate) query = query.lte('created_at', params.endDate.toISOString());
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      const logs = (data || []) as (ModelUsageLog & { ai_models?: { name: string; model_id: string } })[];
+      
+      const stats: ModelUsageStats = {
+        total_requests: logs.length,
+        total_tokens: logs.reduce((sum, log) => sum + log.total_tokens, 0),
+        total_cost: logs.reduce((sum, log) => sum + log.cost_usd, 0),
+        avg_processing_time: logs.length > 0 ? 
+          logs.reduce((sum, log) => sum + log.processing_time_ms, 0) / logs.length : 0,
+        success_rate: logs.length > 0 ? 
+          logs.filter(log => log.success).length / logs.length : 1,
+        cost_by_model: {},
+        usage_by_case: {} as Record<ModelUseCase, number>
+      };
+
+      // Calculate cost by model
+      logs.forEach(log => {
+        const modelName = log.ai_models?.name || 'Unknown';
+        stats.cost_by_model[modelName] = (stats.cost_by_model[modelName] || 0) + log.cost_usd;
+      });
+
+      // Calculate usage by case
+      logs.forEach(log => {
+        stats.usage_by_case[log.use_case] = (stats.usage_by_case[log.use_case] || 0) + 1;
+      });
+
+      return stats;
+    } catch (error) {
+      console.error('Error getting model usage stats:', error);
+      throw new Error(`Failed to get model usage stats: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  },
+
+  // Batch operations
+  bulkUpdateModelConfigs: async (configs: Omit<ModelConfiguration, 'id' | 'created_at' | 'updated_at'>[]): Promise<ModelConfiguration[]> => {
+    try {
+      const configsWithTimestamp = configs.map(config => ({
+        ...config,
+        updated_at: new Date().toISOString()
+      }));
+
+      const { data, error } = await supabase
+        .from('model_configurations')
+        .upsert(configsWithTimestamp, {
+          onConflict: 'user_id,deal_id,use_case'
+        })
+        .select();
+      
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.error('Error bulk updating model configurations:', error);
+      throw new Error(`Failed to bulk update model configurations: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  },
+
+  // Logging function for usage tracking
+  logModelUsage: async (
+    modelId: string,
+    useCase: ModelUseCase,
+    inputTokens: number,
+    outputTokens: number,
+    processingTimeMs: number,
+    success: boolean,
+    dealId?: string,
+    documentId?: string,
+    agentLogId?: string,
+    errorMessage?: string
+  ): Promise<void> => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      // Get model to calculate cost
+      const { data: model } = await supabase
+        .from('ai_models')
+        .select('cost_per_input_token, cost_per_output_token')
+        .eq('id', modelId)
+        .single();
+
+      const costUsd = model ? 
+        (inputTokens * model.cost_per_input_token / 1000) + 
+        (outputTokens * model.cost_per_output_token / 1000) : 0;
+
+      const { error } = await supabase
+        .from('model_usage_logs')
+        .insert({
+          deal_id: dealId,
+          document_id: documentId,
+          agent_log_id: agentLogId,
+          model_id: modelId,
+          use_case: useCase,
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+          total_tokens: inputTokens + outputTokens,
+          cost_usd: costUsd,
+          processing_time_ms: processingTimeMs,
+          success,
+          error_message: errorMessage,
+          user_id: user.id
+        });
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error logging model usage:', error);
+      // Don't throw here to avoid breaking the main flow
+    }
+  }
+};
 
 // Helper function to get authentication headers with optional Content-Type
 async function getAuthHeaders(includeContentType: boolean = true): Promise<{ headers: Record<string, string>; userId: string | null }> {
@@ -598,32 +841,16 @@ async function getSelectedModel(useCase: string, dealId?: string): Promise<{ mod
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
 
-    // Get effective model configuration
-    const { data: modelId, error: configError } = await supabase
-      .rpc('get_effective_model_config', {
-        p_user_id: user.id,
-        p_deal_id: dealId || null,
-        p_use_case: useCase
-      });
-
-    if (configError) {
-      console.error('Error getting model config:', configError);
-      return null;
-    }
-
+    // Use the new modelApi function
+    const modelId = await modelApi.getEffectiveModelConfig(user.id, dealId, useCase as ModelUseCase);
+    
     if (!modelId) return null;
 
     // Get model details
-    const { data: model, error: modelError } = await supabase
-      .from('ai_models')
-      .select('*')
-      .eq('id', modelId)
-      .single();
-
-    if (modelError) {
-      console.error('Error getting model details:', modelError);
-      return null;
-    }
+    const models = await modelApi.getAvailableModels();
+    const model = models.find(m => m.id === modelId);
+    
+    if (!model) return null;
 
     return { modelId, model };
   } catch (error) {
