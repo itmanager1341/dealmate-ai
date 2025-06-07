@@ -3,7 +3,7 @@
 import { supabase } from '@/lib/supabase';
 import type { ModelConfiguration, ModelUsageLog, AIModel, ModelUseCase, ModelUsageStats } from '@/types/models';
 
-const AI_SERVER_URL = 'https://zxjyxzhoz0d2e5-8000.proxy.runpod.net';
+const AI_SERVER_URL = 'https://qe299yt8ai34vd-8000.proxy.runpod.net';
 
 export interface AIResponse {
   success: boolean;
@@ -307,6 +307,38 @@ export const modelApi = {
       console.error('Error logging model usage:', error);
       // Don't throw here to avoid breaking the main flow
     }
+  },
+
+  // Add health check for AI server
+  checkServerHealth: async (): Promise<boolean> => {
+    try {
+      console.log('Checking AI server health at:', AI_SERVER_URL);
+      
+      const response = await fetch(`${AI_SERVER_URL}/health`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        mode: 'cors',
+        credentials: 'omit',
+        signal: AbortSignal.timeout(10000) // 10 second timeout
+      });
+      
+      console.log('Health check response status:', response.status);
+      
+      if (!response.ok) {
+        console.error('AI server health check failed with status:', response.status);
+        return false;
+      }
+      
+      const data = await response.json();
+      console.log('AI server health check response:', data);
+      return data.status === 'healthy' || data.status === 'ok';
+    } catch (error) {
+      console.error('AI server health check failed:', error);
+      return false;
+    }
   }
 };
 
@@ -512,37 +544,11 @@ function parseAIAnalysisWithFallback(analysisText: string): CIMAnalysisResult {
 
 // Health check for AI server with alias for consistency
 export async function checkAIServerHealth(): Promise<boolean> {
-  return await checkApiHealth();
+  return await modelApi.checkServerHealth();
 }
 
 export async function checkApiHealth(): Promise<boolean> {
-  try {
-    console.log('Checking AI server health at:', AI_SERVER_URL);
-    
-    const response = await fetch(`${AI_SERVER_URL}/health`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      mode: 'cors',
-      credentials: 'omit',
-    });
-    
-    console.log('Health check response status:', response.status);
-    
-    if (!response.ok) {
-      console.error('AI server health check failed with status:', response.status);
-      return false;
-    }
-    
-    const data = await response.json();
-    console.log('AI server health check response:', data);
-    return data.status === 'healthy';
-  } catch (error) {
-    console.error('AI server health check failed:', error);
-    return false;
-  }
+  return await modelApi.checkServerHealth();
 }
 
 // Enhanced CIM-specific storage function
@@ -1279,7 +1285,7 @@ export async function generateMemo(dealId: string, requestedSections?: string[])
   }
 }
 
-// Utility function to determine file processing method - keep existing
+// Utility function to determine file processing method
 export function getProcessingMethod(fileName: string): 'audio' | 'excel' | 'document' | 'unknown' {
   const extension = fileName.toLowerCase().split('.').pop();
   
@@ -1301,7 +1307,7 @@ export function getProcessingMethod(fileName: string): 'audio' | 'excel' | 'docu
   }
 }
 
-// Main file processing orchestrator - keep existing
+// Main file processing orchestrator
 export async function processFile(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   const processingMethod = getProcessingMethod(file.name);
   
@@ -1320,7 +1326,7 @@ export async function processFile(file: File, dealId: string, documentId?: strin
   }
 }
 
-// Processing status checker (for long-running operations) - keep existing
+// Processing status checker (for long-running operations)
 export async function checkProcessingStatus(jobId: string): Promise<AIResponse> {
   try {
     const response = await fetch(`${AI_SERVER_URL}/status/${jobId}`, {

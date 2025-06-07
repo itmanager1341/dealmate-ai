@@ -1,4 +1,3 @@
-
 import { useState, useCallback } from 'react';
 import { processFile, generateMemo, checkAIServerHealth, AIResponse } from '../utils/aiApi';
 
@@ -20,12 +19,19 @@ export function useFileProcessing() {
   const checkHealth = useCallback(async () => {
     const healthy = await checkAIServerHealth();
     setIsServerHealthy(healthy);
+    console.log('AI server health check result:', healthy);
     return healthy;
   }, []);
 
   // Process a single file
   const processFileAsync = useCallback(async (file: File, dealId: string): Promise<string> => {
     const jobId = `${dealId}-${file.name}-${Date.now()}`;
+    
+    // Check server health before processing
+    const serverHealthy = await checkHealth();
+    if (!serverHealthy) {
+      throw new Error('AI server is offline. Please try again later.');
+    }
     
     // Add job to tracking
     const newJob: ProcessingJob = {
@@ -86,7 +92,7 @@ export function useFileProcessing() {
       
       throw error;
     }
-  }, []);
+  }, [checkHealth]);
 
   // Process multiple files
   const processFiles = useCallback(async (files: File[], dealId: string): Promise<string[]> => {
