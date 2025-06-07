@@ -3,6 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ModelUsageAnalytics } from "@/components/ModelUsageAnalytics";
 import { APIKeyManagement } from "@/components/APIKeyManagement";
+import { ModelPresetSelector } from "@/components/ModelPresetSelector";
 import { Settings as SettingsIcon, Bot, Key, BarChart3 } from "lucide-react";
 import { SimpleModelTable } from "@/components/SimpleModelTable";
 
@@ -35,12 +36,16 @@ export default function Settings() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="models" className="space-y-4">
+        <TabsContent value="models" className="space-y-6">
+          {/* Quick Setup Presets */}
+          <ModelPresetSelector />
+          
+          {/* Detailed Model Configuration */}
           <Card>
             <CardHeader>
-              <CardTitle>AI Model Configuration</CardTitle>
+              <CardTitle>Advanced Model Configuration</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Configure which AI models to use for each type of analysis across your platform
+                Fine-tune which AI models to use for each analysis type. Costs shown are per 1 million tokens.
               </p>
             </CardHeader>
             <CardContent>

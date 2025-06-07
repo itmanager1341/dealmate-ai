@@ -3,6 +3,7 @@ import React from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { 
   Brain, 
   FileText, 
@@ -11,7 +12,8 @@ import {
   AlertCircle,
   Loader2,
   DollarSign,
-  RefreshCw
+  RefreshCw,
+  Info
 } from "lucide-react";
 import { useCIMModelTracking } from '@/hooks/useCIMModelTracking';
 import { useCIMErrorRecovery } from '@/hooks/useCIMErrorRecovery';
@@ -83,19 +85,58 @@ export function CIMProcessingProgress({
     <Card className="border-purple-200 bg-gradient-to-r from-purple-50 to-pink-50">
       <CardContent className="p-6">
         <div className="space-y-4">
-          {/* Header */}
+          {/* Header with Enhanced Cost & Model Info */}
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-semibold text-purple-900">Processing CIM Analysis</h3>
               <p className="text-sm text-purple-700">{fileName}</p>
             </div>
             <div className="flex items-center gap-2">
+              {/* Real-time Cost Tracker */}
               {totalCost > 0 && (
-                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                  <DollarSign className="h-3 w-3 mr-1" />
-                  ${totalCost.toFixed(4)}
-                </Badge>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 cursor-help">
+                        <DollarSign className="h-3 w-3 mr-1" />
+                        ${totalCost.toFixed(4)}
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-xs">
+                      <div className="text-xs space-y-1">
+                        <div className="font-medium">Real-time AI Cost</div>
+                        <div>Tokens processed & API usage</div>
+                        {trackingState.isTracking && (
+                          <div className="text-green-600">⚡ Tracking active</div>
+                        )}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               )}
+              
+              {/* Model Info on Hover */}
+              {trackingState.isTracking && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 cursor-help">
+                        <Brain className="h-3 w-3 mr-1" />
+                        AI Model
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-xs">
+                      <div className="text-xs space-y-1">
+                        <div className="font-medium">Model Status</div>
+                        <div>Using optimized AI models</div>
+                        <div>Performance tracking enabled</div>
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+
+              {/* Processing Status */}
               <Badge variant={error ? "destructive" : "secondary"} className="bg-purple-100 text-purple-800">
                 {error ? "Failed" : isProcessing ? "Processing" : "Complete"}
               </Badge>
@@ -145,51 +186,59 @@ export function CIMProcessingProgress({
             })}
           </div>
 
-          {/* Error Message with Recovery Options */}
+          {/* Enhanced Error Handling with Smart Recovery */}
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-red-500" />
-                <span className="text-sm font-medium text-red-800">Processing Failed</span>
-                {onRetry && lastError?.retryable && !recoveryState.isRecovering && (
-                  <button
-                    onClick={onRetry}
-                    className="ml-auto flex items-center gap-1 text-sm text-red-700 hover:text-red-800"
-                  >
-                    <RefreshCw className="h-3 w-3" />
-                    Retry
-                  </button>
-                )}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-red-500" />
+                  <span className="text-sm font-medium text-red-800">Processing Failed</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {lastError?.recoveryAction && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-4 w-4 text-red-600 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-xs">
+                          <div className="text-xs">
+                            <div className="font-medium mb-1">Recovery Suggestion</div>
+                            <div>{lastError.recoveryAction}</div>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                  {onRetry && lastError?.retryable && !recoveryState.isRecovering && (
+                    <button
+                      onClick={onRetry}
+                      className="flex items-center gap-1 text-sm text-red-700 hover:text-red-800 bg-red-100 hover:bg-red-200 px-2 py-1 rounded transition-colors"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      Retry
+                    </button>
+                  )}
+                </div>
               </div>
               <p className="text-sm text-red-700 mt-1">{error}</p>
-              {lastError?.recoveryAction && (
-                <p className="text-xs text-red-600 mt-1 italic">{lastError.recoveryAction}</p>
+              {recoveryState.retryCount > 0 && (
+                <p className="text-xs text-red-600 mt-1">
+                  Retry attempt {recoveryState.retryCount} of {recoveryState.maxRetries}
+                </p>
               )}
             </div>
           )}
 
-          {/* Model Usage Summary */}
-          {trackingState.isTracking && (
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-center gap-2">
-                <Brain className="h-4 w-4 text-blue-500" />
-                <span className="text-sm font-medium text-blue-800">Tracking Model Usage</span>
-              </div>
-              <p className="text-xs text-blue-600 mt-1">
-                Monitoring AI model performance and costs...
-              </p>
-            </div>
-          )}
-
-          {/* Processing Details */}
+          {/* Processing Status with Cost Awareness */}
           {isProcessing && !error && (
             <div className="text-center">
               <p className="text-sm text-purple-600">
-                AI is analyzing your CIM document. This may take 1-2 minutes depending on document size.
+                AI is analyzing your CIM document. This may take 1-2 minutes.
               </p>
-              {recoveryState.retryCount > 0 && (
+              {totalCost > 0 && (
                 <p className="text-xs text-purple-500 mt-1">
-                  Retry attempt {recoveryState.retryCount} of {recoveryState.maxRetries}
+                  Current cost: ${totalCost.toFixed(4)} • Estimated total: ${(totalCost * 2).toFixed(4)}
                 </p>
               )}
             </div>
