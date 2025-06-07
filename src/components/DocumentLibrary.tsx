@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -523,6 +524,8 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
           fileName="CIM Document"
           error={cimProcessingStatus.error}
           agentResults={cimProcessingStatus.agentResults}
+          dealId={dealId}
+          documentId={cimProcessingStatus.documentId}
         />
       )}
 
