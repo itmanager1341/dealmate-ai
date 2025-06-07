@@ -9,8 +9,12 @@ import {
   Database, 
   CheckCircle, 
   AlertCircle,
-  Loader2
+  Loader2,
+  DollarSign,
+  RefreshCw
 } from "lucide-react";
+import { useCIMModelTracking } from '@/hooks/useCIMModelTracking';
+import { useCIMErrorRecovery } from '@/hooks/useCIMErrorRecovery';
 
 interface CIMProcessingProgressProps {
   isProcessing: boolean;
@@ -18,6 +22,9 @@ interface CIMProcessingProgressProps {
   currentStep: string;
   fileName: string;
   error?: string;
+  dealId: string;
+  documentId?: string;
+  onRetry?: () => void;
 }
 
 export function CIMProcessingProgress({ 
@@ -25,8 +32,14 @@ export function CIMProcessingProgress({
   progress, 
   currentStep, 
   fileName,
-  error 
+  error,
+  dealId,
+  documentId,
+  onRetry
 }: CIMProcessingProgressProps) {
+  const { trackingState, getTotalCost } = useCIMModelTracking(dealId, documentId);
+  const { recoveryState, getLastError } = useCIMErrorRecovery();
+  
   const steps = [
     { id: 'validation', label: 'Validating File', icon: FileText },
     { id: 'analysis', label: 'AI Analysis', icon: Brain },
@@ -61,6 +74,9 @@ export function CIMProcessingProgress({
     return <IconComponent className="h-4 w-4 text-gray-400" />;
   };
 
+  const lastError = getLastError();
+  const totalCost = getTotalCost();
+
   if (!isProcessing && !error) return null;
 
   return (
@@ -73,9 +89,17 @@ export function CIMProcessingProgress({
               <h3 className="font-semibold text-purple-900">Processing CIM Analysis</h3>
               <p className="text-sm text-purple-700">{fileName}</p>
             </div>
-            <Badge variant={error ? "destructive" : "secondary"} className="bg-purple-100 text-purple-800">
-              {error ? "Failed" : isProcessing ? "Processing" : "Complete"}
-            </Badge>
+            <div className="flex items-center gap-2">
+              {totalCost > 0 && (
+                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                  <DollarSign className="h-3 w-3 mr-1" />
+                  ${totalCost.toFixed(4)}
+                </Badge>
+              )}
+              <Badge variant={error ? "destructive" : "secondary"} className="bg-purple-100 text-purple-800">
+                {error ? "Failed" : isProcessing ? "Processing" : "Complete"}
+              </Badge>
+            </div>
           </div>
 
           {/* Progress Bar */}
@@ -121,14 +145,39 @@ export function CIMProcessingProgress({
             })}
           </div>
 
-          {/* Error Message */}
+          {/* Error Message with Recovery Options */}
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
               <div className="flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 text-red-500" />
                 <span className="text-sm font-medium text-red-800">Processing Failed</span>
+                {onRetry && lastError?.retryable && !recoveryState.isRecovering && (
+                  <button
+                    onClick={onRetry}
+                    className="ml-auto flex items-center gap-1 text-sm text-red-700 hover:text-red-800"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Retry
+                  </button>
+                )}
               </div>
               <p className="text-sm text-red-700 mt-1">{error}</p>
+              {lastError?.recoveryAction && (
+                <p className="text-xs text-red-600 mt-1 italic">{lastError.recoveryAction}</p>
+              )}
+            </div>
+          )}
+
+          {/* Model Usage Summary */}
+          {trackingState.isTracking && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Brain className="h-4 w-4 text-blue-500" />
+                <span className="text-sm font-medium text-blue-800">Tracking Model Usage</span>
+              </div>
+              <p className="text-xs text-blue-600 mt-1">
+                Monitoring AI model performance and costs...
+              </p>
             </div>
           )}
 
@@ -138,6 +187,11 @@ export function CIMProcessingProgress({
               <p className="text-sm text-purple-600">
                 AI is analyzing your CIM document. This may take 1-2 minutes depending on document size.
               </p>
+              {recoveryState.retryCount > 0 && (
+                <p className="text-xs text-purple-500 mt-1">
+                  Retry attempt {recoveryState.retryCount} of {recoveryState.maxRetries}
+                </p>
+              )}
             </div>
           )}
         </div>

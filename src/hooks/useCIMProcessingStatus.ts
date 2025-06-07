@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { completeStuckProcessingJobs, forceCompleteProcessingJob } from '@/utils/processingJobsApi';
+import { useCIMModelTracking } from './useCIMModelTracking';
+import { useCIMErrorRecovery } from './useCIMErrorRecovery';
 
 interface ProcessingJob {
   id: string;
@@ -34,6 +36,10 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
     error: null,
     jobId: null
   });
+
+  // Initialize tracking and error recovery hooks
+  const { trackModelUsage, resetTracking } = useCIMModelTracking(dealId, documentId);
+  const { handleError, attemptRecovery, resetErrorState } = useCIMErrorRecovery();
 
   const checkForActiveJobs = useCallback(async () => {
     try {
@@ -159,6 +165,8 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
 
   const startProcessing = useCallback((jobId: string, fileName: string) => {
     console.log(`Starting processing for job ${jobId} with file ${fileName}`);
+    resetTracking();
+    resetErrorState();
     setStatus({
       isProcessing: true,
       progress: 0,
@@ -167,7 +175,7 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
       error: null,
       jobId
     });
-  }, []);
+  }, [resetTracking, resetErrorState]);
 
   const updateProgress = useCallback((progress: number, step: string, agentResults?: any) => {
     console.log(`Updating progress: ${progress}% - ${step}`);
@@ -177,20 +185,66 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
       currentStep: step,
       agentResults: agentResults || prev.agentResults
     }));
-  }, []);
 
-  const setError = useCallback((error: string) => {
+    // Track model usage for agent results if provided
+    if (agentResults && typeof agentResults === 'object') {
+      Object.entries(agentResults).forEach(([agentName, result]: [string, any]) => {
+        if (result?.status === 'completed' && result?.usage) {
+          const usage = result.usage;
+          trackModelUsage(
+            agentName,
+            usage.modelId || 'unknown',
+            'cim_analysis',
+            usage.inputTokens || 0,
+            usage.outputTokens || 0,
+            usage.processingTime || 0,
+            true
+          ).catch(error => {
+            console.error('Error tracking model usage:', error);
+          });
+        }
+      });
+    }
+  }, [trackModelUsage]);
+
+  const setError = useCallback(async (error: string) => {
     console.error('Setting processing error:', error);
+    
+    // Handle the error through our error recovery system
+    const cimError = await handleError(error);
+    
     setStatus(prev => ({
       ...prev,
       isProcessing: false,
-      error,
+      error: cimError.message,
       currentStep: 'error'
     }));
-  }, []);
+  }, [handleError]);
+
+  const retryProcessing = useCallback(async (retryFunction: () => Promise<void>) => {
+    if (!status.error) return false;
+
+    const lastError = await handleError(status.error);
+    
+    const recoverySuccessful = await attemptRecovery(retryFunction, lastError);
+    
+    if (recoverySuccessful) {
+      setStatus(prev => ({
+        ...prev,
+        error: null,
+        currentStep: 'validation',
+        progress: 0,
+        isProcessing: true
+      }));
+    }
+    
+    return recoverySuccessful;
+  }, [status.error, handleError, attemptRecovery]);
 
   const reset = useCallback(() => {
     console.log('Resetting processing status');
+    resetTracking();
+    resetErrorState();
     setStatus({
       isProcessing: false,
       progress: 0,
@@ -199,7 +253,7 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
       error: null,
       jobId: null
     });
-  }, []);
+  }, [resetTracking, resetErrorState]);
 
   // Set up real-time subscriptions
   useEffect(() => {
@@ -281,6 +335,7 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
     updateProgress,
     setError,
     reset,
-    checkForCompletion
+    checkForCompletion,
+    retryProcessing
   };
 }

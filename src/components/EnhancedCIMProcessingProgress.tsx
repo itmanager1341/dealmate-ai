@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -13,13 +12,22 @@ import {
   DollarSign,
   Shield,
   FileCheck,
-  Zap
+  Zap,
+  RefreshCw
 } from "lucide-react";
+import { useCIMModelTracking } from '@/hooks/useCIMModelTracking';
+import { useCIMErrorRecovery } from '@/hooks/useCIMErrorRecovery';
 
 interface AgentStatus {
   status: 'pending' | 'processing' | 'completed' | 'error';
   error?: string;
   progress?: number;
+  usage?: {
+    modelId?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    processingTime?: number;
+  };
 }
 
 interface EnhancedCIMProcessingProgressProps {
@@ -29,6 +37,9 @@ interface EnhancedCIMProcessingProgressProps {
   fileName: string;
   error?: string;
   agentResults?: Record<string, AgentStatus>;
+  dealId: string;
+  documentId?: string;
+  onRetry?: () => void;
 }
 
 export function EnhancedCIMProcessingProgress({ 
@@ -37,8 +48,14 @@ export function EnhancedCIMProcessingProgress({
   currentStep, 
   fileName,
   error,
-  agentResults = {}
+  agentResults = {},
+  dealId,
+  documentId,
+  onRetry
 }: EnhancedCIMProcessingProgressProps) {
+  const { trackingState, getTotalCost, getAgentCost } = useCIMModelTracking(dealId, documentId);
+  const { recoveryState, getLastError } = useCIMErrorRecovery();
+
   const mainSteps = [
     { id: 'validation', label: 'Validating File', icon: FileText },
     { id: 'analysis', label: 'AI Analysis', icon: Brain },
@@ -96,6 +113,9 @@ export function EnhancedCIMProcessingProgress({
     return <IconComponent className={`h-4 w-4 ${agent.color}`} />;
   };
 
+  const lastError = getLastError();
+  const totalCost = getTotalCost();
+
   if (!isProcessing && !error) return null;
 
   return (
@@ -108,9 +128,17 @@ export function EnhancedCIMProcessingProgress({
               <h3 className="font-semibold text-purple-900">Processing CIM Analysis</h3>
               <p className="text-sm text-purple-700">{fileName}</p>
             </div>
-            <Badge variant={error ? "destructive" : "secondary"} className="bg-purple-100 text-purple-800">
-              {error ? "Failed" : isProcessing ? "Processing" : "Complete"}
-            </Badge>
+            <div className="flex items-center gap-2">
+              {totalCost > 0 && (
+                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                  <DollarSign className="h-3 w-3 mr-1" />
+                  ${totalCost.toFixed(4)}
+                </Badge>
+              )}
+              <Badge variant={error ? "destructive" : "secondary"} className="bg-purple-100 text-purple-800">
+                {error ? "Failed" : isProcessing ? "Processing" : "Complete"}
+              </Badge>
+            </div>
           </div>
 
           {/* Progress Bar */}
@@ -163,6 +191,7 @@ export function EnhancedCIMProcessingProgress({
               <div className="grid grid-cols-2 gap-3">
                 {agents.map((agent) => {
                   const agentStatus = agentResults[agent.id] || { status: 'pending' };
+                  const agentCost = getAgentCost(agent.id);
                   return (
                     <div key={agent.id} className="flex items-center gap-3 p-3 bg-white rounded-lg border">
                       {getAgentIcon(agent, agentStatus)}
@@ -177,9 +206,14 @@ export function EnhancedCIMProcessingProgress({
                           {agentStatus.status}
                         </p>
                       </div>
-                      {agentStatus.progress !== undefined && (
-                        <span className="text-xs text-gray-500">{agentStatus.progress}%</span>
-                      )}
+                      <div className="text-right">
+                        {agentStatus.progress !== undefined && (
+                          <span className="text-xs text-gray-500">{agentStatus.progress}%</span>
+                        )}
+                        {agentCost > 0 && (
+                          <div className="text-xs text-green-600">${agentCost.toFixed(4)}</div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -187,14 +221,39 @@ export function EnhancedCIMProcessingProgress({
             </div>
           )}
 
-          {/* Error Message */}
+          {/* Error Message with Recovery Options */}
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
               <div className="flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 text-red-500" />
                 <span className="text-sm font-medium text-red-800">Processing Failed</span>
+                {onRetry && lastError?.retryable && !recoveryState.isRecovering && (
+                  <button
+                    onClick={onRetry}
+                    className="ml-auto flex items-center gap-1 text-sm text-red-700 hover:text-red-800"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Retry
+                  </button>
+                )}
               </div>
               <p className="text-sm text-red-700 mt-1">{error}</p>
+              {lastError?.recoveryAction && (
+                <p className="text-xs text-red-600 mt-1 italic">{lastError.recoveryAction}</p>
+              )}
+            </div>
+          )}
+
+          {/* Model Usage Summary */}
+          {trackingState.isTracking && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Brain className="h-4 w-4 text-blue-500" />
+                <span className="text-sm font-medium text-blue-800">Tracking Model Usage</span>
+              </div>
+              <p className="text-xs text-blue-600 mt-1">
+                Monitoring AI model performance and costs across all agents...
+              </p>
             </div>
           )}
 
@@ -204,6 +263,11 @@ export function EnhancedCIMProcessingProgress({
               <p className="text-sm text-purple-600">
                 AI is analyzing your CIM document with multiple specialized agents. This may take 2-3 minutes depending on document size.
               </p>
+              {recoveryState.retryCount > 0 && (
+                <p className="text-xs text-purple-500 mt-1">
+                  Retry attempt {recoveryState.retryCount} of {recoveryState.maxRetries}
+                </p>
+              )}
             </div>
           )}
         </div>
