@@ -34,10 +34,9 @@ export interface AIModel {
   speed_score: number;
   created_at: string;
   updated_at: string;
-  // New simplified fields
+  // Enhanced fields from backend
   compatible_use_cases?: string[];
   description?: string;
-  // Enhanced fields
   tokens_per_second?: number;
   best_for?: string[];
   limitations?: string[];
@@ -91,3 +90,36 @@ export interface BulkConfigurationUpdate {
 }
 
 export type ConfigurationPreset = 'cost-optimized' | 'performance-optimized' | 'balanced' | 'recommended';
+
+// Enhanced Performance Metrics from backend
+export interface ModelPerformanceMetrics {
+  model_id: string;
+  use_case: ModelUseCase;
+  success_rate: number;
+  avg_processing_time_ms: number;
+  avg_cost_per_request: number;
+  total_requests: number;
+  error_rate: number;
+  quality_score?: number;
+  user_satisfaction?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ModelOptimizationStrategy {
+  strategy_name: string;
+  cost_weight: number;
+  performance_weight: number;
+  quality_weight: number;
+  max_cost_per_request?: number;
+  min_quality_threshold?: number;
+  preferred_providers?: AIProvider[];
+}
+
+export interface CostBudgetConstraints {
+  daily_budget?: number;
+  monthly_budget?: number;
+  cost_per_request_limit?: number;
+  emergency_fallback_model?: string;
+  budget_alert_threshold?: number;
+}

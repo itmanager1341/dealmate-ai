@@ -67,3 +67,9 @@ export * from './chunks';
 
 // Re-export model types
 export * from './models';
+
+// Export new agent types
+export * from './agents';
+
+// Export new tool types
+export * from './tools';
