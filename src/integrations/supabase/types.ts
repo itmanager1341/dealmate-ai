@@ -14,33 +14,57 @@ export type Database = {
           agent_name: string | null
           agent_type: string | null
           created_at: string | null
+          deal_id: string | null
+          document_id: string | null
           error_message: string | null
           id: string
           input_payload: Json | null
           output_payload: Json | null
           status: string | null
+          user_id: string | null
         }
         Insert: {
           agent_name?: string | null
           agent_type?: string | null
           created_at?: string | null
+          deal_id?: string | null
+          document_id?: string | null
           error_message?: string | null
           id?: string
           input_payload?: Json | null
           output_payload?: Json | null
           status?: string | null
+          user_id?: string | null
         }
         Update: {
           agent_name?: string | null
           agent_type?: string | null
           created_at?: string | null
+          deal_id?: string | null
+          document_id?: string | null
           error_message?: string | null
           id?: string
           input_payload?: Json | null
           output_payload?: Json | null
           status?: string | null
+          user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "agent_logs_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_logs_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ai_models: {
         Row: {
@@ -172,6 +196,104 @@ export type Database = {
             columns: ["document_id"]
             isOneToOne: false
             referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chart_elements: {
+        Row: {
+          chart_type: string
+          confidence_score: number
+          created_at: string
+          data_points: Json | null
+          deal_id: string
+          description: string | null
+          document_id: string
+          id: string
+          metadata: Json | null
+          source_page: number | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          chart_type: string
+          confidence_score: number
+          created_at?: string
+          data_points?: Json | null
+          deal_id: string
+          description?: string | null
+          document_id: string
+          id?: string
+          metadata?: Json | null
+          source_page?: number | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          chart_type?: string
+          confidence_score?: number
+          created_at?: string
+          data_points?: Json | null
+          deal_id?: string
+          description?: string | null
+          document_id?: string
+          id?: string
+          metadata?: Json | null
+          source_page?: number | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chart_elements_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chart_elements_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chart_relationships: {
+        Row: {
+          chart_id: string
+          confidence_score: number
+          created_at: string
+          id: string
+          related_text: string
+          relationship_type: string
+          updated_at: string
+        }
+        Insert: {
+          chart_id: string
+          confidence_score: number
+          created_at?: string
+          id?: string
+          related_text: string
+          relationship_type: string
+          updated_at?: string
+        }
+        Update: {
+          chart_id?: string
+          confidence_score?: number
+          created_at?: string
+          id?: string
+          related_text?: string
+          relationship_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chart_relationships_chart_id_fkey"
+            columns: ["chart_id"]
+            isOneToOne: false
+            referencedRelation: "chart_elements"
             referencedColumns: ["id"]
           },
         ]
@@ -474,6 +596,66 @@ export type Database = {
         }
         Relationships: []
       }
+      document_quotes: {
+        Row: {
+          context: string | null
+          created_at: string
+          deal_id: string
+          document_id: string
+          id: string
+          metadata: Json | null
+          quote_text: string
+          quote_type: string
+          significance_score: number
+          speaker: string | null
+          speaker_title: string | null
+          updated_at: string
+        }
+        Insert: {
+          context?: string | null
+          created_at?: string
+          deal_id: string
+          document_id: string
+          id?: string
+          metadata?: Json | null
+          quote_text: string
+          quote_type: string
+          significance_score: number
+          speaker?: string | null
+          speaker_title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          context?: string | null
+          created_at?: string
+          deal_id?: string
+          document_id?: string
+          id?: string
+          metadata?: Json | null
+          quote_text?: string
+          quote_type?: string
+          significance_score?: number
+          speaker?: string | null
+          speaker_title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_quotes_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_quotes_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documents: {
         Row: {
           classified_as: string | null
@@ -740,6 +922,77 @@ export type Database = {
         }
         Relationships: []
       }
+      quote_relationships: {
+        Row: {
+          confidence_score: number
+          created_at: string
+          id: string
+          quote_id: string
+          related_metric: string
+          relationship_type: string
+          updated_at: string
+        }
+        Insert: {
+          confidence_score: number
+          created_at?: string
+          id?: string
+          quote_id: string
+          related_metric: string
+          relationship_type: string
+          updated_at?: string
+        }
+        Update: {
+          confidence_score?: number
+          created_at?: string
+          id?: string
+          quote_id?: string
+          related_metric?: string
+          relationship_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quote_relationships_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "document_quotes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tools: {
+        Row: {
+          cost_estimate: number
+          created_at: string
+          description: string | null
+          id: string
+          model_use_case: Database["public"]["Enums"]["model_use_case"]
+          name: string
+          required_kwargs: string[]
+          version: number
+        }
+        Insert: {
+          cost_estimate?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          model_use_case?: Database["public"]["Enums"]["model_use_case"]
+          name: string
+          required_kwargs?: string[]
+          version?: number
+        }
+        Update: {
+          cost_estimate?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          model_use_case?: Database["public"]["Enums"]["model_use_case"]
+          name?: string
+          required_kwargs?: string[]
+          version?: number
+        }
+        Relationships: []
+      }
       transcripts: {
         Row: {
           content: string | null
@@ -863,6 +1116,7 @@ export type Database = {
         | "audio_transcription"
         | "memo_generation"
         | "general_analysis"
+        | "generic"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -986,6 +1240,7 @@ export const Constants = {
         "audio_transcription",
         "memo_generation",
         "general_analysis",
+        "generic",
       ],
     },
   },

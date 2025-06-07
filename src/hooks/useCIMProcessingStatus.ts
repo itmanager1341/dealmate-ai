@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { completeStuckProcessingJobs } from '@/utils/processingJobsApi';
+import { completeStuckProcessingJobs, forceCompleteProcessingJob } from '@/utils/processingJobsApi';
 
 interface ProcessingJob {
   id: string;
@@ -53,6 +53,7 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
 
       if (jobs && jobs.length > 0) {
         const job = jobs[0] as ProcessingJob;
+        console.log('Found active processing job:', job);
         setStatus({
           isProcessing: true,
           progress: job.progress || 0,
@@ -83,13 +84,26 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
       }
 
       if (analysis && analysis.length > 0) {
-        // Check if this is a recent completion
-        const analysisTime = new Date(analysis[0].created_at);
-        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+        console.log('Found completed CIM analysis, checking for stuck jobs');
         
-        if (analysisTime > fiveMinutesAgo) {
+        // Check if this is a recent completion (within 10 minutes)
+        const analysisTime = new Date(analysis[0].created_at);
+        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+        
+        if (analysisTime > tenMinutesAgo) {
+          console.log('Recent CIM analysis found, attempting to complete stuck jobs');
+          
           // Try to fix any stuck processing jobs
           await completeStuckProcessingJobs(dealId, 'cim_analysis');
+          
+          // If we have a current job ID that's still processing, force complete it
+          if (status.jobId && status.isProcessing) {
+            try {
+              await forceCompleteProcessingJob(status.jobId, 'CIM analysis completed successfully');
+            } catch (error) {
+              console.error('Error force completing job:', error);
+            }
+          }
           
           setStatus(prev => ({
             ...prev,
@@ -120,9 +134,10 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
       if (completedJobs && completedJobs.length > 0) {
         const job = completedJobs[0] as ProcessingJob;
         const completionTime = new Date(job.completed_at!);
-        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
         
-        if (completionTime > fiveMinutesAgo) {
+        if (completionTime > tenMinutesAgo) {
+          console.log('Found recently completed processing job');
           setStatus({
             isProcessing: false,
             progress: 100,
@@ -140,9 +155,10 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
       console.error('Error in checkForCompletion:', error);
       return false;
     }
-  }, [dealId]);
+  }, [dealId, status.jobId, status.isProcessing]);
 
   const startProcessing = useCallback((jobId: string, fileName: string) => {
+    console.log(`Starting processing for job ${jobId} with file ${fileName}`);
     setStatus({
       isProcessing: true,
       progress: 0,
@@ -154,6 +170,7 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
   }, []);
 
   const updateProgress = useCallback((progress: number, step: string, agentResults?: any) => {
+    console.log(`Updating progress: ${progress}% - ${step}`);
     setStatus(prev => ({
       ...prev,
       progress,
@@ -163,6 +180,7 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
   }, []);
 
   const setError = useCallback((error: string) => {
+    console.error('Setting processing error:', error);
     setStatus(prev => ({
       ...prev,
       isProcessing: false,
@@ -172,6 +190,7 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
   }, []);
 
   const reset = useCallback(() => {
+    console.log('Resetting processing status');
     setStatus({
       isProcessing: false,
       progress: 0,
@@ -184,6 +203,8 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
 
   // Set up real-time subscriptions
   useEffect(() => {
+    console.log('Setting up real-time subscriptions for deal:', dealId);
+    
     const jobsChannel = supabase
       .channel('processing_jobs_changes')
       .on('postgres_changes', {
@@ -192,11 +213,12 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
         table: 'processing_jobs',
         filter: `deal_id=eq.${dealId}`
       }, (payload) => {
-        console.log('Processing job change:', payload);
+        console.log('Processing job change received:', payload);
         
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const job = payload.new as ProcessingJob;
           if (job.job_type === 'cim_analysis') {
+            console.log('Updating status from real-time event:', job);
             setStatus(prev => ({
               ...prev,
               isProcessing: job.status === 'processing' || job.status === 'pending',
@@ -219,7 +241,9 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
         table: 'cim_analysis',
         filter: `deal_id=eq.${dealId}`
       }, (payload) => {
-        console.log('CIM analysis completed:', payload);
+        console.log('CIM analysis completed via real-time:', payload);
+        
+        // When CIM analysis is inserted, mark processing as complete
         setStatus(prev => ({
           ...prev,
           isProcessing: false,
@@ -227,17 +251,26 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
           currentStep: 'complete',
           error: null
         }));
+        
+        // Also try to complete any stuck jobs
+        completeStuckProcessingJobs(dealId, 'cim_analysis').then((result) => {
+          if (result) {
+            console.log('Completed stuck jobs after CIM analysis insertion:', result);
+          }
+        });
       })
       .subscribe();
 
     return () => {
+      console.log('Cleaning up real-time subscriptions');
       supabase.removeChannel(jobsChannel);
       supabase.removeChannel(analysisChannel);
     };
   }, [dealId]);
 
-  // Check for existing jobs on mount
+  // Check for existing jobs and completion status on mount and when dealId changes
   useEffect(() => {
+    console.log('Checking for existing jobs and completion status');
     checkForActiveJobs();
     checkForCompletion();
   }, [checkForActiveJobs, checkForCompletion]);
