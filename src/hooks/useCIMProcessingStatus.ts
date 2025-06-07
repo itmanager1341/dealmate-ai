@@ -25,6 +25,7 @@ interface CIMProcessingStatus {
   agentResults: Record<string, any>;
   error: string | null;
   jobId: string | null;
+  documentId: string | null;
 }
 
 export function useCIMProcessingStatus(dealId: string, documentId?: string) {
@@ -34,7 +35,8 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
     currentStep: 'validation',
     agentResults: {},
     error: null,
-    jobId: null
+    jobId: null,
+    documentId: null
   });
 
   // Initialize tracking and error recovery hooks
@@ -66,7 +68,8 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
           currentStep: job.current_step || 'processing',
           agentResults: job.agent_results || {},
           error: job.error_message || null,
-          jobId: job.id
+          jobId: job.id,
+          documentId: job.document_id || null
         });
       }
     } catch (error) {
@@ -150,7 +153,8 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
             currentStep: 'complete',
             agentResults: job.agent_results || {},
             error: null,
-            jobId: job.id
+            jobId: job.id,
+            documentId: job.document_id || null
           });
           return true;
         }
@@ -163,7 +167,7 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
     }
   }, [dealId, status.jobId, status.isProcessing]);
 
-  const startProcessing = useCallback((jobId: string, fileName: string) => {
+  const startProcessing = useCallback((jobId: string, fileName: string, docId?: string) => {
     console.log(`Starting processing for job ${jobId} with file ${fileName}`);
     resetTracking();
     resetErrorState();
@@ -173,7 +177,8 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
       currentStep: 'validation',
       agentResults: {},
       error: null,
-      jobId
+      jobId,
+      documentId: docId || null
     });
   }, [resetTracking, resetErrorState]);
 
@@ -251,7 +256,8 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
       currentStep: 'validation',
       agentResults: {},
       error: null,
-      jobId: null
+      jobId: null,
+      documentId: null
     });
   }, [resetTracking, resetErrorState]);
 
@@ -280,7 +286,8 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
               currentStep: job.current_step || 'processing',
               agentResults: job.agent_results || {},
               error: job.error_message || null,
-              jobId: job.id
+              jobId: job.id,
+              documentId: job.document_id || null
             }));
           }
         }

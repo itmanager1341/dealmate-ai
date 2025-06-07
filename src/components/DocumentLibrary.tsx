@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -284,8 +283,8 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
         currentStep: 'validation'
       });
 
-      // Start processing status
-      cimProcessingStatus.startProcessing(processingJob.id, fileName);
+      // Start processing status with documentId
+      cimProcessingStatus.startProcessing(processingJob.id, fileName, documentId);
       
       const storageFilePath = document.file_path || document.storage_path;
       if (!storageFilePath) {
