@@ -84,7 +84,10 @@ export function CIMProcessingProgress({
   const lastError = getLastError();
   const totalCost = getTotalCost();
 
-  if (!isProcessing && !error && currentStep !== 'stopped') return null;
+  // Don't show the component if not processing, no error, and not stopped
+  if (!isProcessing && !error && currentStep !== 'stopped' && currentStep !== 'cancelled') return null;
+
+  const isStoppedOrCancelled = currentStep === 'stopped' || currentStep === 'cancelled';
 
   return (
     <Card className="border-purple-200 bg-gradient-to-r from-purple-50 to-pink-50">
@@ -94,7 +97,7 @@ export function CIMProcessingProgress({
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-semibold text-purple-900">
-                {currentStep === 'stopped' ? 'Processing Stopped' : 'Processing CIM Analysis'}
+                {isStoppedOrCancelled ? 'Processing Stopped' : 'Processing CIM Analysis'}
               </h3>
               <p className="text-sm text-purple-700">{fileName}</p>
             </div>
@@ -143,7 +146,7 @@ export function CIMProcessingProgress({
                 </TooltipProvider>
               )}
 
-              {/* Stop Button */}
+              {/* Stop Button - Only show when actually processing */}
               {isProcessing && onStop && (
                 <TooltipProvider>
                   <Tooltip>
@@ -168,14 +171,14 @@ export function CIMProcessingProgress({
               )}
 
               {/* Processing Status */}
-              <Badge variant={error ? "destructive" : currentStep === 'stopped' ? "secondary" : "secondary"} 
+              <Badge variant={error ? "destructive" : isStoppedOrCancelled ? "secondary" : "secondary"} 
                      className={
                        error ? "bg-red-100 text-red-800" :
-                       currentStep === 'stopped' ? "bg-gray-100 text-gray-800" :
+                       isStoppedOrCancelled ? "bg-gray-100 text-gray-800" :
                        "bg-purple-100 text-purple-800"
                      }>
                 {error ? "Failed" : 
-                 currentStep === 'stopped' ? "Stopped" :
+                 isStoppedOrCancelled ? "Stopped" :
                  isProcessing ? "Processing" : "Complete"}
               </Badge>
             </div>
@@ -186,7 +189,7 @@ export function CIMProcessingProgress({
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-purple-700">
                 {error ? "Processing Failed" : 
-                 currentStep === 'stopped' ? "Processing Stopped" :
+                 isStoppedOrCancelled ? "Processing Stopped" :
                  currentStep === 'complete' ? "Analysis Complete" : currentStep}
               </span>
               <span className="text-sm text-purple-600">{Math.round(progress)}%</span>
@@ -227,14 +230,14 @@ export function CIMProcessingProgress({
           </div>
 
           {/* Stopped Message */}
-          {currentStep === 'stopped' && (
+          {isStoppedOrCancelled && (
             <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
               <div className="flex items-center gap-2">
                 <X className="h-4 w-4 text-gray-500" />
                 <span className="text-sm font-medium text-gray-800">Processing Stopped</span>
               </div>
               <p className="text-sm text-gray-700 mt-1">
-                The CIM analysis was stopped by user request. You can start a new analysis when ready.
+                The CIM analysis was stopped. You can start a new analysis when ready.
               </p>
             </div>
           )}
