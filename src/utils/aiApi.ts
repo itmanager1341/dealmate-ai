@@ -1,14 +1,12 @@
-// AI API Integration for DealMate Frontend - Hybrid Enhanced Version
+// AI API Integration for DealMate Frontend - Enhanced Version with Dynamic Server URL
 
 import { supabase } from '@/lib/supabase';
 import type { ModelConfiguration, ModelUsageLog, AIModel, ModelUseCase, ModelUsageStats } from '@/types/models';
 
-const DEFAULT_AI_SERVER_URL = 'https://qe299yt8ai34vd-8000.proxy.runpod.net';
-
-// Function to get current AI server URL from localStorage or default
-export function getAIServerURL(): string {
+// Function to get current AI server URL from localStorage
+export function getAIServerURL(): string | null {
   const storedUrl = localStorage.getItem('ai_server_url');
-  return storedUrl || DEFAULT_AI_SERVER_URL;
+  return storedUrl || null;
 }
 
 // Function to update AI server URL in localStorage
@@ -19,6 +17,28 @@ export function setAIServerURL(url: string): void {
 // Function to reset to default URL
 export function resetAIServerURL(): void {
   localStorage.removeItem('ai_server_url');
+}
+
+// Function to validate server URL is configured
+export function validateServerURL(): { isValid: boolean; error?: string } {
+  const serverUrl = getAIServerURL();
+  
+  if (!serverUrl) {
+    return {
+      isValid: false,
+      error: 'AI server URL is not configured. Please set it in Settings > API Key Management.'
+    };
+  }
+  
+  try {
+    new URL(serverUrl);
+    return { isValid: true };
+  } catch {
+    return {
+      isValid: false,
+      error: 'Invalid AI server URL format. Please check the URL in Settings.'
+    };
+  }
 }
 
 export interface AIResponse {
@@ -328,10 +348,15 @@ export const modelApi = {
   // Add health check for AI server
   checkServerHealth: async (): Promise<boolean> => {
     try {
-      const AI_SERVER_URL = getAIServerURL();
-      console.log('Checking AI server health at:', AI_SERVER_URL);
+      const serverUrl = getAIServerURL();
+      if (!serverUrl) {
+        console.error('No AI server URL configured');
+        return false;
+      }
       
-      const response = await fetch(`${AI_SERVER_URL}/health`, {
+      console.log('Checking AI server health at:', serverUrl);
+      
+      const response = await fetch(`${serverUrl}/health`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -731,7 +756,7 @@ async function storeProcessingResults(
       }
     }
 
-    // Store specific data based on processing method (keep existing logic)
+    // Store specific data based on processing method
     if (processingMethod === 'excel' && aiResponse) {
       // Handle Excel data - create chunks from the raw data and analysis
       console.log('Processing Excel data for chunks...');
@@ -936,6 +961,15 @@ export async function processCIM(file: File, dealId: string, documentId?: string
   try {
     console.log(`Starting enhanced CIM processing for ${file.name}`);
     
+    // Validate server URL first
+    const urlValidation = validateServerURL();
+    if (!urlValidation.isValid) {
+      return {
+        success: false,
+        error: urlValidation.error
+      };
+    }
+    
     // Get authentication headers WITHOUT Content-Type for FormData
     const { headers: authHeaders, userId } = await getAuthHeaders(false);
     
@@ -980,9 +1014,13 @@ export async function processCIM(file: File, dealId: string, documentId?: string
       formData.append('provider', selectedModelInfo.model.provider);
     }
 
-    const AI_SERVER_URL = getAIServerURL();
+    const serverUrl = getAIServerURL();
+    if (!serverUrl) {
+      throw new Error('AI server URL not configured');
+    }
+    
     console.log('Sending authenticated CIM processing request to AI server...');
-    const response = await fetch(`${AI_SERVER_URL}/process-cim`, {
+    const response = await fetch(`${serverUrl}/process-cim`, {
       method: 'POST',
       headers: authHeaders, // Only includes Authorization header, no Content-Type
       body: formData,
@@ -1104,6 +1142,15 @@ export async function processCIM(file: File, dealId: string, documentId?: string
 // Transcribe audio files (MP3, WAV) with authentication
 export async function transcribeAudio(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
+    // Validate server URL first
+    const urlValidation = validateServerURL();
+    if (!urlValidation.isValid) {
+      return {
+        success: false,
+        error: urlValidation.error
+      };
+    }
+    
     // Get auth headers WITHOUT Content-Type for FormData
     const { headers: authHeaders, userId } = await getAuthHeaders(false);
     
@@ -1119,8 +1166,12 @@ export async function transcribeAudio(file: File, dealId: string, documentId?: s
     formData.append('deal_id', dealId);
     formData.append('user_id', userId);
 
-    const AI_SERVER_URL = getAIServerURL();
-    const response = await fetch(`${AI_SERVER_URL}/transcribe`, {
+    const serverUrl = getAIServerURL();
+    if (!serverUrl) {
+      throw new Error('AI server URL not configured');
+    }
+    
+    const response = await fetch(`${serverUrl}/transcribe`, {
       method: 'POST',
       headers: authHeaders, // Only Authorization header
       body: formData,
@@ -1157,6 +1208,15 @@ export async function transcribeAudio(file: File, dealId: string, documentId?: s
 // Process Excel files for financial metrics with authentication
 export async function processExcel(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
+    // Validate server URL first
+    const urlValidation = validateServerURL();
+    if (!urlValidation.isValid) {
+      return {
+        success: false,
+        error: urlValidation.error
+      };
+    }
+    
     // Get auth headers WITHOUT Content-Type for FormData
     const { headers: authHeaders, userId } = await getAuthHeaders(false);
     
@@ -1172,8 +1232,12 @@ export async function processExcel(file: File, dealId: string, documentId?: stri
     formData.append('deal_id', dealId);
     formData.append('user_id', userId);
 
-    const AI_SERVER_URL = getAIServerURL();
-    const response = await fetch(`${AI_SERVER_URL}/process-excel`, {
+    const serverUrl = getAIServerURL();
+    if (!serverUrl) {
+      throw new Error('AI server URL not configured');
+    }
+    
+    const response = await fetch(`${serverUrl}/process-excel`, {
       method: 'POST',
       headers: authHeaders, // Only Authorization header
       body: formData,
@@ -1210,6 +1274,15 @@ export async function processExcel(file: File, dealId: string, documentId?: stri
 // Process documents (PDF, DOCX) for business analysis with authentication
 export async function processDocument(file: File, dealId: string, documentId?: string): Promise<AIResponse> {
   try {
+    // Validate server URL first
+    const urlValidation = validateServerURL();
+    if (!urlValidation.isValid) {
+      return {
+        success: false,
+        error: urlValidation.error
+      };
+    }
+    
     // Get auth headers WITHOUT Content-Type for FormData
     const { headers: authHeaders, userId } = await getAuthHeaders(false);
     
@@ -1225,8 +1298,12 @@ export async function processDocument(file: File, dealId: string, documentId?: s
     formData.append('deal_id', dealId);
     formData.append('user_id', userId);
 
-    const AI_SERVER_URL = getAIServerURL();
-    const response = await fetch(`${AI_SERVER_URL}/process-document`, {
+    const serverUrl = getAIServerURL();
+    if (!serverUrl) {
+      throw new Error('AI server URL not configured');
+    }
+    
+    const response = await fetch(`${serverUrl}/process-document`, {
       method: 'POST',
       headers: authHeaders, // Only Authorization header
       body: formData,
@@ -1263,6 +1340,15 @@ export async function processDocument(file: File, dealId: string, documentId?: s
 // Generate investment memo from processed data with authentication
 export async function generateMemo(dealId: string, requestedSections?: string[]): Promise<AIResponse> {
   try {
+    // Validate server URL first
+    const urlValidation = validateServerURL();
+    if (!urlValidation.isValid) {
+      return {
+        success: false,
+        error: urlValidation.error
+      };
+    }
+    
     // Get auth headers WITH Content-Type for JSON requests
     const { headers: authHeaders, userId } = await getAuthHeaders(true);
     
@@ -1273,8 +1359,12 @@ export async function generateMemo(dealId: string, requestedSections?: string[])
       };
     }
     
-    const AI_SERVER_URL = getAIServerURL();
-    const response = await fetch(`${AI_SERVER_URL}/generate-memo`, {
+    const serverUrl = getAIServerURL();
+    if (!serverUrl) {
+      throw new Error('AI server URL not configured');
+    }
+    
+    const response = await fetch(`${serverUrl}/generate-memo`, {
       method: 'POST',
       headers: authHeaders, // Includes both Authorization and Content-Type
       body: JSON.stringify({
@@ -1351,8 +1441,21 @@ export async function processFile(file: File, dealId: string, documentId?: strin
 // Processing status checker (for long-running operations)
 export async function checkProcessingStatus(jobId: string): Promise<AIResponse> {
   try {
-    const AI_SERVER_URL = getAIServerURL();
-    const response = await fetch(`${AI_SERVER_URL}/status/${jobId}`, {
+    // Validate server URL first
+    const urlValidation = validateServerURL();
+    if (!urlValidation.isValid) {
+      return {
+        success: false,
+        error: urlValidation.error
+      };
+    }
+    
+    const serverUrl = getAIServerURL();
+    if (!serverUrl) {
+      throw new Error('AI server URL not configured');
+    }
+    
+    const response = await fetch(`${serverUrl}/status/${jobId}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

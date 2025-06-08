@@ -7,8 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { Eye, EyeOff, Key, CheckCircle, XCircle, RefreshCw, Server, Globe } from 'lucide-react';
-import { getAIServerURL, setAIServerURL, resetAIServerURL, modelApi } from '@/utils/aiApi';
+import { Eye, EyeOff, Key, CheckCircle, XCircle, RefreshCw, Server, Globe, AlertTriangle } from 'lucide-react';
+import { getAIServerURL, setAIServerURL, resetAIServerURL, modelApi, validateServerURL } from '@/utils/aiApi';
 
 interface APIKey {
   name: string;
@@ -45,8 +45,8 @@ export function APIKeyManagement() {
   const [loading, setLoading] = useState<Record<string, boolean>>({});
 
   // AI Server URL management state
-  const [serverUrl, setServerUrl] = useState(getAIServerURL());
-  const [serverStatus, setServerStatus] = useState<'unknown' | 'online' | 'offline' | 'testing'>('unknown');
+  const [serverUrl, setServerUrl] = useState(getAIServerURL() || '');
+  const [serverStatus, setServerStatus] = useState<'unknown' | 'online' | 'offline' | 'testing' | 'not_configured'>('unknown');
   const [serverLoading, setServerLoading] = useState(false);
 
   useEffect(() => {
@@ -73,6 +73,12 @@ export function APIKeyManagement() {
   };
 
   const checkServerStatus = async () => {
+    const urlValidation = validateServerURL();
+    if (!urlValidation.isValid) {
+      setServerStatus('not_configured');
+      return;
+    }
+
     setServerStatus('testing');
     try {
       const isHealthy = await modelApi.checkServerHealth();
@@ -129,7 +135,7 @@ export function APIKeyManagement() {
       const isHealthy = await modelApi.checkServerHealth();
       
       // Restore original URL if test failed
-      if (!isHealthy) {
+      if (!isHealthy && originalUrl) {
         setAIServerURL(originalUrl);
       }
       
@@ -146,9 +152,49 @@ export function APIKeyManagement() {
 
   const resetToDefaultUrl = () => {
     resetAIServerURL();
-    setServerUrl(getAIServerURL());
-    setServerStatus('unknown');
-    toast.success('Reset to default server URL');
+    setServerUrl('');
+    setServerStatus('not_configured');
+    toast.success('Server URL cleared');
+  };
+
+  const getServerStatusBadge = () => {
+    switch (serverStatus) {
+      case 'online':
+        return (
+          <Badge variant="outline" className="flex items-center gap-1 text-green-600 border-green-600">
+            <CheckCircle className="h-3 w-3" />
+            Online
+          </Badge>
+        );
+      case 'offline':
+        return (
+          <Badge variant="outline" className="flex items-center gap-1 text-red-600 border-red-600">
+            <XCircle className="h-3 w-3" />
+            Offline
+          </Badge>
+        );
+      case 'testing':
+        return (
+          <Badge variant="outline" className="flex items-center gap-1">
+            <RefreshCw className="h-3 w-3 animate-spin" />
+            Testing...
+          </Badge>
+        );
+      case 'not_configured':
+        return (
+          <Badge variant="outline" className="flex items-center gap-1 text-orange-600 border-orange-600">
+            <AlertTriangle className="h-3 w-3" />
+            Not Configured
+          </Badge>
+        );
+      default:
+        return (
+          <Badge variant="outline" className="flex items-center gap-1">
+            <Globe className="h-3 w-3" />
+            Unknown
+          </Badge>
+        );
+    }
   };
 
   const handleKeyUpdate = (keyName: string, value: string) => {
@@ -243,26 +289,24 @@ export function APIKeyManagement() {
         </AlertDescription>
       </Alert>
 
+      {/* Server URL Not Configured Warning */}
+      {serverStatus === 'not_configured' && (
+        <Alert className="border-orange-200 bg-orange-50">
+          <AlertTriangle className="h-4 w-4 text-orange-600" />
+          <AlertDescription className="text-orange-700">
+            <strong>AI Server URL not configured.</strong> You need to set up the AI server URL before processing documents.
+            Enter your RunPod server URL below to get started.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* AI Server Configuration Section */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Server className="h-5 w-5" />
             AI Server Configuration
-            <Badge variant="outline" className="flex items-center gap-1">
-              {serverStatus === 'online' ? (
-                <CheckCircle className="h-3 w-3 text-green-600" />
-              ) : serverStatus === 'offline' ? (
-                <XCircle className="h-3 w-3 text-red-600" />
-              ) : serverStatus === 'testing' ? (
-                <RefreshCw className="h-3 w-3 animate-spin" />
-              ) : (
-                <Globe className="h-3 w-3" />
-              )}
-              {serverStatus === 'testing' ? 'Testing...' : 
-               serverStatus === 'online' ? 'Online' : 
-               serverStatus === 'offline' ? 'Offline' : 'Unknown'}
-            </Badge>
+            {getServerStatusBadge()}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             Configure the AI server URL for document processing and analysis. Update this when your RunPod server restarts.
@@ -304,14 +348,14 @@ export function APIKeyManagement() {
           </div>
           <div className="flex justify-between items-center">
             <p className="text-xs text-muted-foreground">
-              Current URL: {getAIServerURL()}
+              Current URL: {getAIServerURL() || 'Not configured'}
             </p>
             <Button
               variant="ghost"
               size="sm"
               onClick={resetToDefaultUrl}
             >
-              Reset to Default
+              Clear URL
             </Button>
           </div>
         </CardContent>

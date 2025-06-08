@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { completeStuckProcessingJobs, forceCompleteProcessingJob, stopProcessingJob, stopAllProcessingJobsForDeal } from '@/utils/processingJobsApi';
@@ -79,7 +80,7 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
 
   const checkForCompletion = useCallback(async () => {
     try {
-      // Check for completed CIM analysis
+      // Check for completed CIM analysis first (this is the real success indicator)
       const { data: analysis, error: analysisError } = await supabase
         .from('cim_analysis')
         .select('*')
@@ -89,18 +90,18 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
 
       if (analysisError) {
         console.error('Error checking CIM analysis:', analysisError);
-        return;
+        return false;
       }
 
       if (analysis && analysis.length > 0) {
-        console.log('Found completed CIM analysis, checking for stuck jobs');
+        console.log('Found completed CIM analysis, checking recency');
         
         // Check if this is a recent completion (within 10 minutes)
         const analysisTime = new Date(analysis[0].created_at);
         const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
         
         if (analysisTime > tenMinutesAgo) {
-          console.log('Recent CIM analysis found, attempting to complete stuck jobs');
+          console.log('Recent CIM analysis found - marking as completed successfully');
           
           // Try to fix any stuck processing jobs
           await completeStuckProcessingJobs(dealId, 'cim_analysis');
@@ -118,14 +119,14 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
             ...prev,
             isProcessing: false,
             progress: 100,
-            currentStep: 'complete',
+            currentStep: 'completed',
             error: null
           }));
           return true;
         }
       }
 
-      // Check for completed processing jobs
+      // Check for jobs that completed successfully
       const { data: completedJobs, error: jobError } = await supabase
         .from('processing_jobs')
         .select('*')
@@ -137,7 +138,7 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
 
       if (jobError) {
         console.error('Error checking completed jobs:', jobError);
-        return;
+        return false;
       }
 
       if (completedJobs && completedJobs.length > 0) {
@@ -147,12 +148,46 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
         
         if (completionTime > tenMinutesAgo) {
           console.log('Found recently completed processing job');
+          
+          // Double check if we actually have analysis results
+          const hasAnalysis = analysis && analysis.length > 0;
+          
           setStatus({
             isProcessing: false,
             progress: 100,
-            currentStep: 'complete',
+            currentStep: hasAnalysis ? 'completed' : 'completed_no_results',
             agentResults: job.agent_results || {},
-            error: null,
+            error: hasAnalysis ? null : 'Processing completed but no analysis results found',
+            jobId: job.id,
+            documentId: job.document_id || null
+          });
+          return true;
+        }
+      }
+
+      // Check for jobs that failed
+      const { data: failedJobs, error: failedJobError } = await supabase
+        .from('processing_jobs')
+        .select('*')
+        .eq('deal_id', dealId)
+        .eq('job_type', 'cim_analysis')
+        .eq('status', 'failed')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (!failedJobError && failedJobs && failedJobs.length > 0) {
+        const job = failedJobs[0] as ProcessingJob;
+        const failureTime = new Date(job.started_at);
+        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+        
+        if (failureTime > tenMinutesAgo) {
+          console.log('Found recent failed processing job');
+          setStatus({
+            isProcessing: false,
+            progress: 0,
+            currentStep: 'failed',
+            agentResults: job.agent_results || {},
+            error: job.error_message || 'Processing failed',
             jobId: job.id,
             documentId: job.document_id || null
           });
@@ -316,13 +351,19 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
           const job = payload.new as ProcessingJob;
           if (job.job_type === 'cim_analysis') {
             console.log('Updating status from real-time event:', job);
+            
+            // Determine if this is a real success or failure
+            const isProcessing = job.status === 'processing' || job.status === 'pending';
+            const hasFailed = job.status === 'failed';
+            const hasError = job.error_message || hasFailed;
+            
             setStatus(prev => ({
               ...prev,
-              isProcessing: job.status === 'processing' || job.status === 'pending',
+              isProcessing,
               progress: job.progress || 0,
-              currentStep: job.current_step || 'processing',
+              currentStep: hasFailed ? 'failed' : (job.current_step || 'processing'),
               agentResults: job.agent_results || {},
-              error: job.error_message || null,
+              error: hasError ? (job.error_message || 'Processing failed') : null,
               jobId: job.id,
               documentId: job.document_id || null
             }));
@@ -346,7 +387,7 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
           ...prev,
           isProcessing: false,
           progress: 100,
-          currentStep: 'complete',
+          currentStep: 'completed',
           error: null
         }));
         

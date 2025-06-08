@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,11 +17,12 @@ import {
   FileCheck,
   BarChart3,
   FileSpreadsheet,
-  Music
+  Music,
+  XCircle
 } from "lucide-react";
 import { useCIMProcessingStatus } from '@/hooks/useCIMProcessingStatus';
 import { CIMProcessingProgress } from './CIMProcessingProgress';
-import { processFile } from '@/utils/aiApi';
+import { processFile, validateServerURL } from '@/utils/aiApi';
 import { Document } from '@/types';
 
 interface DocumentLibraryProps {
@@ -88,6 +90,13 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
   };
 
   const handleDocumentAnalysis = async (document: Document) => {
+    // Check if server URL is configured before starting
+    const urlValidation = validateServerURL();
+    if (!urlValidation.isValid) {
+      toast.error(urlValidation.error || 'AI server URL not configured. Please configure it in Settings.');
+      return;
+    }
+
     if (isProcessing) {
       toast.warning('Another analysis is already in progress');
       return;
@@ -119,19 +128,37 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
         type: document.file_type 
       });
       
+      console.log(`Starting analysis for document: ${document.file_name || document.name}`);
+      
       // Use the original processFile function which handles everything
       const result = await processFile(file, dealId, document.id);
       
-      if (result.success) {
+      console.log('Processing result:', result);
+      
+      // Only show success if the result is actually successful AND has data
+      if (result.success && result.data) {
+        console.log('Document analysis completed successfully');
         toast.success('Document analysis completed successfully!');
         onCIMAnalysisComplete?.(result.data);
         onDocumentUpdate?.();
       } else {
-        throw new Error(result.error || 'Analysis failed');
+        // Handle the case where processing "succeeds" but with no actual result
+        const errorMessage = result.error || 'Analysis completed but no results were generated';
+        console.error('Analysis failed or incomplete:', errorMessage);
+        throw new Error(errorMessage);
       }
     } catch (error) {
       console.error('Error processing document:', error);
-      toast.error('Failed to process document analysis');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to process document analysis';
+      
+      // Show appropriate error message based on the error type
+      if (errorMessage.includes('server URL') || errorMessage.includes('not configured')) {
+        toast.error('AI server not configured. Please set up the server URL in Settings.');
+      } else if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
+        toast.error('AI server is offline or unreachable. Please check the server URL in Settings.');
+      } else {
+        toast.error(`Analysis failed: ${errorMessage}`);
+      }
     } finally {
       setProcessingDocId(null);
       reset(); // Reset the processing status
@@ -175,29 +202,33 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
     );
   };
 
+  const getProcessingStatusIcon = (docId: string) => {
+    if (processingDocId === docId) {
+      if (error) {
+        return <XCircle className="h-4 w-4 mr-2 text-red-500" />;
+      }
+      return <Clock className="h-4 w-4 mr-2 animate-spin" />;
+    }
+    return null;
+  };
+
   const getAnalysisButton = (document: Document) => {
     const classification = document.classified_as;
+    const isCurrentlyProcessing = processingDocId === document.id;
+    const hasError = isCurrentlyProcessing && error;
     
     // Show appropriate analysis button based on classification
     if (classification === 'cim') {
       return (
         <Button
           onClick={() => handleDocumentAnalysis(document)}
-          disabled={isProcessing || processingDocId === document.id}
+          disabled={isProcessing || isCurrentlyProcessing}
           size="sm"
-          className="bg-purple-600 hover:bg-purple-700"
+          className={hasError ? "bg-red-600 hover:bg-red-700" : "bg-purple-600 hover:bg-purple-700"}
         >
-          {processingDocId === document.id ? (
-            <>
-              <Clock className="h-4 w-4 mr-2 animate-spin" />
-              Processing
-            </>
-          ) : (
-            <>
-              <Brain className="h-4 w-4 mr-2" />
-              CIM Analysis
-            </>
-          )}
+          {getProcessingStatusIcon(document.id)}
+          {hasError ? 'Failed' : isCurrentlyProcessing ? 'Processing' : 'CIM Analysis'}
+          {!isCurrentlyProcessing && !hasError && <Brain className="h-4 w-4 ml-2" />}
         </Button>
       );
     }
@@ -206,21 +237,13 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       return (
         <Button
           onClick={() => handleDocumentAnalysis(document)}
-          disabled={isProcessing || processingDocId === document.id}
+          disabled={isProcessing || isCurrentlyProcessing}
           size="sm"
-          className="bg-green-600 hover:bg-green-700"
+          className={hasError ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"}
         >
-          {processingDocId === document.id ? (
-            <>
-              <Clock className="h-4 w-4 mr-2 animate-spin" />
-              Processing
-            </>
-          ) : (
-            <>
-              <BarChart3 className="h-4 w-4 mr-2" />
-              Financial Analysis
-            </>
-          )}
+          {getProcessingStatusIcon(document.id)}
+          {hasError ? 'Failed' : isCurrentlyProcessing ? 'Processing' : 'Financial Analysis'}
+          {!isCurrentlyProcessing && !hasError && <BarChart3 className="h-4 w-4 ml-2" />}
         </Button>
       );
     }
@@ -229,21 +252,13 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       return (
         <Button
           onClick={() => handleDocumentAnalysis(document)}
-          disabled={isProcessing || processingDocId === document.id}
+          disabled={isProcessing || isCurrentlyProcessing}
           size="sm"
-          className="bg-orange-600 hover:bg-orange-700"
+          className={hasError ? "bg-red-600 hover:bg-red-700" : "bg-orange-600 hover:bg-orange-700"}
         >
-          {processingDocId === document.id ? (
-            <>
-              <Clock className="h-4 w-4 mr-2 animate-spin" />
-              Processing
-            </>
-          ) : (
-            <>
-              <Music className="h-4 w-4 mr-2" />
-              Transcription
-            </>
-          )}
+          {getProcessingStatusIcon(document.id)}
+          {hasError ? 'Failed' : isCurrentlyProcessing ? 'Processing' : 'Transcription'}
+          {!isCurrentlyProcessing && !hasError && <Music className="h-4 w-4 ml-2" />}
         </Button>
       );
     }
@@ -252,21 +267,13 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
     return (
       <Button
         onClick={() => handleDocumentAnalysis(document)}
-        disabled={isProcessing || processingDocId === document.id}
+        disabled={isProcessing || isCurrentlyProcessing}
         size="sm"
-        className="bg-blue-600 hover:bg-blue-700"
+        className={hasError ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"}
       >
-        {processingDocId === document.id ? (
-          <>
-            <Clock className="h-4 w-4 mr-2 animate-spin" />
-            Processing
-          </>
-        ) : (
-          <>
-            <Brain className="h-4 w-4 mr-2" />
-            AI Analysis
-          </>
-        )}
+        {getProcessingStatusIcon(document.id)}
+        {hasError ? 'Failed' : isCurrentlyProcessing ? 'Processing' : 'AI Analysis'}
+        {!isCurrentlyProcessing && !hasError && <Brain className="h-4 w-4 ml-2" />}
       </Button>
     );
   };
@@ -342,6 +349,12 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
                             Processed
                           </Badge>
                         )}
+                        {processingDocId === doc.id && error && (
+                          <Badge variant="outline" className="bg-red-50 text-red-700">
+                            <XCircle className="h-3 w-3 mr-1" />
+                            Failed
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -354,6 +367,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
                       variant="outline"
                       size="sm"
                       className="text-red-600 hover:text-red-700"
+                      disabled={processingDocId === doc.id}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
