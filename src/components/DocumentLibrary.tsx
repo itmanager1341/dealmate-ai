@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -131,6 +132,32 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
     }
   };
 
+  // Helper function to convert database file types to MIME types
+  const getProperMimeType = (dbFileType: string | null, fileName: string): string => {
+    const extension = fileName.toLowerCase().split('.').pop();
+    
+    // If we have a proper MIME type already, use it
+    if (dbFileType && dbFileType.includes('/')) {
+      return dbFileType;
+    }
+    
+    // Map database file types and extensions to proper MIME types
+    const mimeTypeMap: Record<string, string> = {
+      'pdf': 'application/pdf',
+      'mp3': 'audio/mpeg',
+      'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'txt': 'text/plain'
+    };
+    
+    // Try database file type first, then extension
+    const typeToCheck = dbFileType || extension || '';
+    return mimeTypeMap[typeToCheck.toLowerCase()] || 'application/octet-stream';
+  };
+
   const handleDocumentAnalysis = async (document: Document) => {
     // Check if server URL is configured before starting
     const urlValidation = validateServerURL();
@@ -166,23 +193,16 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       }
       
       // Create a File object from the downloaded data with correct MIME type
-      let fileType = document.file_type;
+      const fileName = document.file_name || document.name;
+      const properMimeType = getProperMimeType(document.file_type, fileName);
       
-      // Fix common MIME type issues for PDFs
-      if (!fileType || fileType === 'application/octet-stream') {
-        const fileName = document.file_name || document.name;
-        const extension = fileName.toLowerCase().split('.').pop();
-        if (extension === 'pdf') {
-          fileType = 'application/pdf';
-          console.log(`Fixed MIME type for PDF file: ${fileName}`);
-        }
-      }
+      console.log(`File MIME type conversion: "${document.file_type}" -> "${properMimeType}" for ${fileName}`);
       
-      const file = new File([fileData], document.file_name || document.name, { 
-        type: fileType 
+      const file = new File([fileData], fileName, { 
+        type: properMimeType 
       });
       
-      console.log(`Starting analysis for document: ${document.file_name || document.name} (${document.classified_as})`);
+      console.log(`Starting analysis for document: ${fileName} (${document.classified_as})`);
       console.log(`File details: size=${file.size}, type="${file.type}"`);
       
       // Get the correct processing function based on document classification
