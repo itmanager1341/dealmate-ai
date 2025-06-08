@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -135,17 +134,14 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       
       console.log('Processing result:', result);
       
-      // Only show success if the result is actually successful AND has data
-      if (result.success && result.data) {
+      // Simple success check - trust the processFile result
+      if (result.success) {
         console.log('Document analysis completed successfully');
         toast.success('Document analysis completed successfully!');
         onCIMAnalysisComplete?.(result.data);
         onDocumentUpdate?.();
       } else {
-        // Handle the case where processing "succeeds" but with no actual result
-        const errorMessage = result.error || 'Analysis completed but no results were generated';
-        console.error('Analysis failed or incomplete:', errorMessage);
-        throw new Error(errorMessage);
+        throw new Error(result.error || 'Analysis failed');
       }
     } catch (error) {
       console.error('Error processing document:', error);
@@ -299,7 +295,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
 
   return (
     <div className="space-y-6">
-      {/* Processing Progress - Show when processing */}
+      {/* Processing Progress - Show when processing or has error */}
       {(isProcessing || error) && (
         <CIMProcessingProgress
           isProcessing={isProcessing}

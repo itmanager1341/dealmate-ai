@@ -4,7 +4,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { 
   Brain, 
   FileText, 
@@ -14,9 +13,7 @@ import {
   Loader2,
   DollarSign,
   RefreshCw,
-  Info,
-  StopCircle,
-  X
+  StopCircle
 } from "lucide-react";
 import { useCIMModelTracking } from '@/hooks/useCIMModelTracking';
 import { useCIMErrorRecovery } from '@/hooks/useCIMErrorRecovery';
@@ -84,102 +81,45 @@ export function CIMProcessingProgress({
   const lastError = getLastError();
   const totalCost = getTotalCost();
 
-  // Don't show the component if not processing, no error, and not stopped
-  if (!isProcessing && !error && currentStep !== 'stopped' && currentStep !== 'cancelled') return null;
-
-  const isStoppedOrCancelled = currentStep === 'stopped' || currentStep === 'cancelled';
+  // Simple visibility logic - show when processing or has error
+  if (!isProcessing && !error) return null;
 
   return (
     <Card className="border-purple-200 bg-gradient-to-r from-purple-50 to-pink-50">
       <CardContent className="p-6">
         <div className="space-y-4">
-          {/* Header with Enhanced Cost & Model Info */}
+          {/* Header */}
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-semibold text-purple-900">
-                {isStoppedOrCancelled ? 'Processing Stopped' : 'Processing CIM Analysis'}
-              </h3>
+              <h3 className="font-semibold text-purple-900">Processing CIM Analysis</h3>
               <p className="text-sm text-purple-700">{fileName}</p>
             </div>
             <div className="flex items-center gap-2">
-              {/* Real-time Cost Tracker */}
+              {/* Cost Tracker */}
               {totalCost > 0 && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 cursor-help">
-                        <DollarSign className="h-3 w-3 mr-1" />
-                        ${totalCost.toFixed(4)}
-                      </Badge>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" className="max-w-xs">
-                      <div className="text-xs space-y-1">
-                        <div className="font-medium">Real-time AI Cost</div>
-                        <div>Tokens processed & API usage</div>
-                        {trackingState.isTracking && (
-                          <div className="text-green-600">⚡ Tracking active</div>
-                        )}
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-              
-              {/* Model Info on Hover */}
-              {trackingState.isTracking && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 cursor-help">
-                        <Brain className="h-3 w-3 mr-1" />
-                        AI Model
-                      </Badge>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" className="max-w-xs">
-                      <div className="text-xs space-y-1">
-                        <div className="font-medium">Model Status</div>
-                        <div>Using optimized AI models</div>
-                        <div>Performance tracking enabled</div>
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                  <DollarSign className="h-3 w-3 mr-1" />
+                  ${totalCost.toFixed(4)}
+                </Badge>
               )}
 
               {/* Stop Button - Only show when actually processing */}
               {isProcessing && onStop && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button 
-                        variant="destructive" 
-                        size="sm"
-                        onClick={onStop}
-                        className="bg-red-100 hover:bg-red-200 text-red-700 border-red-200"
-                      >
-                        <StopCircle className="h-4 w-4 mr-1" />
-                        Stop
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">
-                      <div className="text-xs">
-                        Stop the current processing job
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  onClick={onStop}
+                  className="bg-red-100 hover:bg-red-200 text-red-700 border-red-200"
+                >
+                  <StopCircle className="h-4 w-4 mr-1" />
+                  Stop
+                </Button>
               )}
 
               {/* Processing Status */}
-              <Badge variant={error ? "destructive" : isStoppedOrCancelled ? "secondary" : "secondary"} 
-                     className={
-                       error ? "bg-red-100 text-red-800" :
-                       isStoppedOrCancelled ? "bg-gray-100 text-gray-800" :
-                       "bg-purple-100 text-purple-800"
-                     }>
-                {error ? "Failed" : 
-                 isStoppedOrCancelled ? "Stopped" :
-                 isProcessing ? "Processing" : "Complete"}
+              <Badge variant={error ? "destructive" : "secondary"} 
+                     className={error ? "bg-red-100 text-red-800" : "bg-purple-100 text-purple-800"}>
+                {error ? "Failed" : isProcessing ? "Processing" : "Complete"}
               </Badge>
             </div>
           </div>
@@ -189,7 +129,6 @@ export function CIMProcessingProgress({
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-purple-700">
                 {error ? "Processing Failed" : 
-                 isStoppedOrCancelled ? "Processing Stopped" :
                  currentStep === 'complete' ? "Analysis Complete" : currentStep}
               </span>
               <span className="text-sm text-purple-600">{Math.round(progress)}%</span>
@@ -229,20 +168,7 @@ export function CIMProcessingProgress({
             })}
           </div>
 
-          {/* Stopped Message */}
-          {isStoppedOrCancelled && (
-            <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
-              <div className="flex items-center gap-2">
-                <X className="h-4 w-4 text-gray-500" />
-                <span className="text-sm font-medium text-gray-800">Processing Stopped</span>
-              </div>
-              <p className="text-sm text-gray-700 mt-1">
-                The CIM analysis was stopped. You can start a new analysis when ready.
-              </p>
-            </div>
-          )}
-
-          {/* Enhanced Error Handling with Smart Recovery */}
+          {/* Error Handling */}
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
               <div className="flex items-center justify-between">
@@ -250,32 +176,15 @@ export function CIMProcessingProgress({
                   <AlertCircle className="h-4 w-4 text-red-500" />
                   <span className="text-sm font-medium text-red-800">Processing Failed</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  {lastError?.recoveryAction && (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Info className="h-4 w-4 text-red-600 cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-xs">
-                          <div className="text-xs">
-                            <div className="font-medium mb-1">Recovery Suggestion</div>
-                            <div>{lastError.recoveryAction}</div>
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
-                  {onRetry && lastError?.retryable && !recoveryState.isRecovering && (
-                    <button
-                      onClick={onRetry}
-                      className="flex items-center gap-1 text-sm text-red-700 hover:text-red-800 bg-red-100 hover:bg-red-200 px-2 py-1 rounded transition-colors"
-                    >
-                      <RefreshCw className="h-3 w-3" />
-                      Retry
-                    </button>
-                  )}
-                </div>
+                {onRetry && lastError?.retryable && !recoveryState.isRecovering && (
+                  <button
+                    onClick={onRetry}
+                    className="flex items-center gap-1 text-sm text-red-700 hover:text-red-800 bg-red-100 hover:bg-red-200 px-2 py-1 rounded transition-colors"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Retry
+                  </button>
+                )}
               </div>
               <p className="text-sm text-red-700 mt-1">{error}</p>
               {recoveryState.retryCount > 0 && (
@@ -286,7 +195,7 @@ export function CIMProcessingProgress({
             </div>
           )}
 
-          {/* Processing Status with Cost Awareness */}
+          {/* Processing Status */}
           {isProcessing && !error && (
             <div className="text-center">
               <p className="text-sm text-purple-600">
@@ -294,7 +203,7 @@ export function CIMProcessingProgress({
               </p>
               {totalCost > 0 && (
                 <p className="text-xs text-purple-500 mt-1">
-                  Current cost: ${totalCost.toFixed(4)} • Estimated total: ${(totalCost * 2).toFixed(4)}
+                  Current cost: ${totalCost.toFixed(4)}
                 </p>
               )}
             </div>
