@@ -21,17 +21,7 @@ import {
 import { useCIMProcessingStatus } from '@/hooks/useCIMProcessingStatus';
 import { CIMProcessingProgress } from './CIMProcessingProgress';
 import { processFile } from '@/utils/aiApi';
-
-interface Document {
-  id: string;
-  name: string;
-  file_name: string;
-  file_type: string;
-  size: number;
-  uploaded_at: string;
-  processed: boolean;
-  classified_as: string | null;
-}
+import { Document } from '@/types';
 
 interface DocumentLibraryProps {
   dealId: string;
@@ -107,12 +97,17 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       setProcessingDocId(document.id);
       
       // Start the processing status tracking
-      startProcessing(`${dealId}-${document.file_name}`, document.file_name, document.id);
+      startProcessing(`${dealId}-${document.file_name || document.name}`, document.file_name || document.name, document.id);
       
-      // Get the file from Supabase storage
+      // Get the file from Supabase storage using the correct path
+      const filePath = document.file_path || document.storage_path;
+      if (!filePath) {
+        throw new Error('No file path found for document');
+      }
+
       const { data: fileData, error: downloadError } = await supabase.storage
         .from('documents')
-        .download(document.file_path || document.storage_path);
+        .download(filePath);
       
       if (downloadError) {
         console.error('Error downloading file:', downloadError);
@@ -120,7 +115,9 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       }
       
       // Create a File object from the downloaded data
-      const file = new File([fileData], document.file_name, { type: document.file_type });
+      const file = new File([fileData], document.file_name || document.name, { 
+        type: document.file_type 
+      });
       
       // Use the original processFile function which handles everything
       const result = await processFile(file, dealId, document.id);
@@ -301,7 +298,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
           isProcessing={isProcessing}
           progress={progress}
           currentStep={currentStep}
-          fileName={documents.find(d => d.id === documentId)?.file_name || 'Unknown file'}
+          fileName={documents.find(d => d.id === documentId)?.file_name || documents.find(d => d.id === documentId)?.name || 'Unknown file'}
           error={error || undefined}
           dealId={dealId}
           documentId={documentId || undefined}
