@@ -109,14 +109,21 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       // Start the processing status tracking
       startProcessing(`${dealId}-${document.file_name}`, document.file_name, document.id);
       
-      // Create a File object from the document (this is a simplified approach)
-      // In a real implementation, you'd retrieve the actual file from storage
-      const response = await fetch(`/api/documents/${document.id}/file`);
-      const blob = await response.blob();
-      const file = new File([blob], document.file_name, { type: document.file_type });
+      // Get the file from Supabase storage
+      const { data: fileData, error: downloadError } = await supabase.storage
+        .from('documents')
+        .download(document.file_path || document.storage_path);
       
-      // Process the file
-      const result = await processFile(file, dealId);
+      if (downloadError) {
+        console.error('Error downloading file:', downloadError);
+        throw new Error('Failed to download file for analysis');
+      }
+      
+      // Create a File object from the downloaded data
+      const file = new File([fileData], document.file_name, { type: document.file_type });
+      
+      // Use the original processFile function which handles everything
+      const result = await processFile(file, dealId, document.id);
       
       if (result.success) {
         toast.success('Document analysis completed successfully!');
@@ -130,6 +137,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       toast.error('Failed to process document analysis');
     } finally {
       setProcessingDocId(null);
+      reset(); // Reset the processing status
     }
   };
 

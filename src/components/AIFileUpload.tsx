@@ -1,349 +1,279 @@
-
-import React, { useState, useCallback, useEffect } from 'react';
-import { useDropzone } from 'react-dropzone';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useCallback } from "react";
+import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { 
-  Upload, 
-  FileText, 
-  FileSpreadsheet, 
-  Music, 
-  CheckCircle, 
-  XCircle, 
-  Loader,
-  Zap
-} from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import { getCurrentUser } from '@/lib/supabase';
-import { toast } from 'sonner';
-import { v4 as uuidv4 } from 'uuid';
-import { getProcessingMethod } from '../utils/aiApi';
+import { cn } from "@/lib/utils";
+import { Upload, File, FileText, UploadCloud, X } from "lucide-react";
+import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
+import { v4 as uuidv4 } from "uuid";
+import { getCurrentUser } from "@/lib/supabase";
+import { processFile } from "@/utils/aiApi";
+import { classifyDocument } from "@/utils/documentClassifier";
 
-interface AIFileUploadProps {
-  dealId: string;
-  onUploadComplete?: (results: any[]) => void;
+interface FileUploaderProps {
+  dealId?: string;
+  bucketName: "documents" | "audio" | "exports";
+  allowedFileTypes?: string[];
   maxFiles?: number;
+  onUploadComplete?: (files: Array<{ path: string; name: string; type: string; size: number }>) => void;
   className?: string;
 }
 
-const AIFileUpload: React.FC<AIFileUploadProps> = ({
+export default function AIFileUpload({
   dealId,
-  onUploadComplete,
+  bucketName = "documents",
+  allowedFileTypes = [".pdf", ".docx", ".xlsx", ".mp3"],
   maxFiles = 10,
-  className
-}) => {
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{[key: string]: number}>({});
+  onUploadComplete,
+  className,
+}: FileUploaderProps) {
+  const [files, setFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
 
-  // Auto-classify documents based on filename and type
-  const classifyDocument = (fileName: string, fileType: string): string => {
-    const name = fileName.toLowerCase();
-    const type = fileType.toLowerCase();
-    
-    // CIM documents
-    if (name.includes('cim') || name.includes('confidential information memorandum')) {
-      return 'cim';
-    }
-    
-    // Financial documents
-    if (type.includes('sheet') || type.includes('excel') || type.includes('csv') ||
-        name.includes('financial') || name.includes('model') || name.includes('projection')) {
-      return 'financial';
-    }
-    
-    // Audio files
-    if (type.includes('audio') || type.includes('mp3') || type.includes('wav')) {
-      return 'audio';
-    }
-    
-    // Legal documents
-    if (name.includes('legal') || name.includes('contract') || name.includes('agreement')) {
-      return 'legal';
-    }
-    
-    // Default to document for PDFs and Word docs
-    if (type.includes('pdf') || type.includes('word') || type.includes('docx')) {
-      return 'document';
-    }
-    
-    return 'other';
-  };
-
-  // File drop handler
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const newFiles = acceptedFiles.slice(0, maxFiles - uploadedFiles.length);
-    setUploadedFiles(prev => [...prev, ...newFiles]);
-  }, [uploadedFiles.length, maxFiles]);
+  const onDrop = useCallback(
+    (acceptedFiles: File[]) => {
+      if (files.length + acceptedFiles.length > maxFiles) {
+        toast.error(`You can only upload up to ${maxFiles} files at once.`);
+        return;
+      }
+      
+      setFiles((prev) => [...prev, ...acceptedFiles]);
+    },
+    [files.length, maxFiles]
+  );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: {
-      'audio/*': ['.mp3', '.wav', '.m4a'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-      'application/vnd.ms-excel': ['.xls'],
-      'text/csv': ['.csv'],
-      'application/pdf': ['.pdf'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-      'application/msword': ['.doc']
-    },
-    maxFiles: maxFiles - uploadedFiles.length,
-    disabled: isUploading
+    accept: allowedFileTypes.reduce((acc, type) => {
+      // Convert from .pdf to application/pdf format
+      const mimeType = type === '.pdf' ? { 'application/pdf': [] } :
+                       type === '.docx' ? { 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': [] } :
+                       type === '.xlsx' ? { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [] } :
+                       type === '.mp3' ? { 'audio/mpeg': [] } :
+                       { [type]: [] };
+      return { ...acc, ...mimeType };
+    }, {}),
   });
 
-  // Upload files to storage and database immediately
-  const handleUploadFiles = async () => {
-    if (uploadedFiles.length === 0) return;
-    
-    setIsUploading(true);
-    const uploadedResults = [];
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const uploadFiles = async () => {
+    if (!dealId) {
+      toast.error("Deal ID is required for upload.");
+      return;
+    }
+
+    if (files.length === 0) {
+      toast.error("Please select at least one file to upload.");
+      return;
+    }
+
+    setUploading(true);
+    setProgress(0);
+
+    const uploadedFiles = [];
+    const totalFiles = files.length;
     
     try {
-      console.log(`Starting to upload ${uploadedFiles.length} files`);
-      
-      // Get current user
+      // Get current user to create folder structure
       const user = await getCurrentUser();
       if (!user) {
         throw new Error("User not authenticated");
       }
 
-      // Upload files one by one
-      for (let i = 0; i < uploadedFiles.length; i++) {
-        const file = uploadedFiles[i];
-        const fileExt = file.name.split('.').pop()?.toLowerCase();
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const fileExt = file.name.split('.').pop();
         const fileName = `${user.id}/${dealId}/${uuidv4()}.${fileExt}`;
-        
-        console.log(`Uploading file ${i + 1}/${uploadedFiles.length}: ${file.name}`);
-        
-        // Update progress
-        setUploadProgress(prev => ({ ...prev, [file.name]: 0 }));
-        
-        try {
-          // Upload to Supabase storage
-          const { error: uploadError } = await supabase.storage
-            .from('documents')
-            .upload(fileName, file);
 
-          if (uploadError) {
-            console.error("Storage upload error:", uploadError);
-            throw uploadError;
-          }
+        console.log(`Uploading file ${i + 1}/${totalFiles}: ${file.name}`);
 
-          // Update progress
-          setUploadProgress(prev => ({ ...prev, [file.name]: 50 }));
+        const { error: uploadError } = await supabase.storage
+          .from(bucketName)
+          .upload(fileName, file);
 
-          // Determine file type and classification
-          let fileType: 'pdf' | 'docx' | 'xlsx' | 'mp3' = 'pdf';
-          if (fileExt === 'docx') fileType = 'docx';
-          if (fileExt === 'xlsx') fileType = 'xlsx';
-          if (fileExt === 'mp3') fileType = 'mp3';
-
-          // Auto-classify the document
-          const classification = classifyDocument(file.name, file.type);
-          console.log(`Auto-classified ${file.name} as: ${classification}`);
-
-          // Save to database with classification
-          const { data: documentData, error: dbError } = await supabase
-            .from('documents')
-            .insert({
-              deal_id: dealId,
-              name: file.name,
-              file_path: fileName,
-              file_name: file.name,
-              storage_path: fileName,
-              file_type: fileType,
-              size: file.size,
-              processed: false,
-              uploaded_by: user.id,
-              classified_as: classification // Auto-classify during upload
-            })
-            .select()
-            .single();
-
-          if (dbError) {
-            console.error("Database insert error:", dbError);
-            throw dbError;
-          }
-
-          // Update progress
-          setUploadProgress(prev => ({ ...prev, [file.name]: 100 }));
-          
-          uploadedResults.push({
-            file: file.name,
-            document: documentData,
-            classification: classification
-          });
-          
-          console.log(`Successfully uploaded and classified ${file.name} as ${classification}`);
-          toast.success(`Uploaded ${file.name} (${classification})`);
-          
-        } catch (error) {
-          console.error(`Error uploading ${file.name}:`, error);
-          toast.error(`Failed to upload ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        if (uploadError) {
+          console.error("Storage upload error:", uploadError);
+          throw uploadError;
         }
+
+        // Auto-classify the document
+        const classification = classifyDocument(file.name, file.type);
+
+        // Get file type based on extension
+        let fileType: 'pdf' | 'docx' | 'xlsx' | 'mp3' = 'pdf';
+        if (fileExt === 'docx') fileType = 'docx';
+        if (fileExt === 'xlsx') fileType = 'xlsx';
+        if (fileExt === 'mp3') fileType = 'mp3';
+
+        // Create document record in the database with auto-classification
+        const { data: documentData, error: dbError } = await supabase
+          .from('documents')
+          .insert({
+            deal_id: dealId,
+            name: file.name,
+            file_path: fileName,
+            file_type: fileType,
+            size: file.size,
+            processed: false,
+            uploaded_by: user.id,
+            file_name: file.name,
+            storage_path: fileName,
+            is_audio: fileExt === 'mp3',
+            classified_as: classification // Add auto-classification
+          })
+          .select()
+          .single();
+
+        if (dbError) {
+          console.error("Database insert error:", dbError);
+          throw dbError;
+        }
+
+        // Start AI processing in the background
+        if (documentData) {
+          console.log(`Starting AI processing for ${file.name}`);
+          processFile(file, dealId, documentData.id).then((result) => {
+            if (result.success) {
+              console.log(`AI processing completed for ${file.name}`);
+              toast.success(`AI analysis completed for ${file.name}`);
+            } else {
+              console.error(`AI processing failed for ${file.name}:`, result.error);
+              toast.error(`AI processing failed for ${file.name}`);
+            }
+          }).catch((error) => {
+            console.error(`AI processing error for ${file.name}:`, error);
+          });
+        }
+
+        uploadedFiles.push({
+          path: fileName,
+          name: file.name,
+          type: fileType,
+          size: file.size
+        });
+
+        // Update progress
+        setProgress(((i + 1) / totalFiles) * 100);
+      }
+
+      toast.success(`Successfully uploaded ${uploadedFiles.length} files.`);
+      
+      // Call the callback with the uploaded files info
+      if (onUploadComplete) {
+        onUploadComplete(uploadedFiles);
       }
       
-      // Call completion callback with results
-      if (onUploadComplete && uploadedResults.length > 0) {
-        onUploadComplete(uploadedResults);
-      }
-      
-      // Clear uploaded files after processing
-      setUploadedFiles([]);
-      setUploadProgress({});
-      
-      toast.success(`Upload complete! ${uploadedResults.length} of ${uploadedFiles.length} files uploaded and classified.`);
+      // Clear the files array
+      setFiles([]);
       
     } catch (error) {
-      console.error('File upload failed:', error);
-      toast.error('File upload failed');
+      console.error("Error uploading files:", error);
+      toast.error("Failed to upload files. Please try again.");
     } finally {
-      setIsUploading(false);
+      setUploading(false);
     }
   };
 
-  // Remove file from upload queue
-  const removeFile = (index: number) => {
-    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // Get file type icon
   const getFileIcon = (fileName: string) => {
-    const method = getProcessingMethod(fileName);
-    switch (method) {
-      case 'audio': return <Music className="h-4 w-4" />;
-      case 'excel': return <FileSpreadsheet className="h-4 w-4" />;
-      case 'document': return <FileText className="h-4 w-4" />;
-      default: return <FileText className="h-4 w-4" />;
-    }
-  };
-
-  // Get classification badge color
-  const getClassificationBadgeColor = (fileName: string, fileType: string) => {
-    const classification = classifyDocument(fileName, fileType);
-    switch (classification) {
-      case 'cim': return 'bg-purple-100 text-purple-800';
-      case 'financial': return 'bg-green-100 text-green-800';
-      case 'audio': return 'bg-blue-100 text-blue-800';
-      case 'legal': return 'bg-yellow-100 text-yellow-800';
-      case 'document': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  // Get upload progress badge
-  const getProgressBadge = (fileName: string) => {
-    const progress = uploadProgress[fileName];
-    if (progress === undefined) return null;
-    if (progress === 100) return <Badge variant="default" className="bg-green-500">Uploaded</Badge>;
-    return <Badge variant="secondary">Uploading... {progress}%</Badge>;
+    const extension = fileName.split('.').pop()?.toLowerCase();
+    
+    if (extension === 'pdf') return <File className="h-5 w-5 text-red-400" />;
+    if (extension === 'docx') return <FileText className="h-5 w-5 text-blue-400" />;
+    if (extension === 'xlsx') return <FileText className="h-5 w-5 text-green-400" />;
+    if (extension === 'mp3') return <FileText className="h-5 w-5 text-purple-400" />;
+    
+    return <File className="h-5 w-5" />;
   };
 
   return (
-    <div className={`space-y-4 ${className}`}>
-      {/* File Upload Area */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Upload className="h-5 w-5" />
-            Document Upload
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div
-            {...getRootProps()}
-            className={`
-              border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
-              ${isDragActive ? 'border-blue-400 bg-blue-50' : 'border-gray-300'}
-              ${isUploading ? 'opacity-50 cursor-not-allowed' : 'hover:border-gray-400'}
-            `}
-          >
-            <input {...getInputProps()} />
-            <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            {isDragActive ? (
-              <p className="text-blue-600">Drop the files here...</p>
-            ) : (
-              <div>
-                <p className="text-gray-600 mb-2">
-                  Drag & drop deal documents here, or click to select
-                </p>
-                <p className="text-sm text-gray-500">
-                  Supports: Excel, PDF, Word, Audio files (MP3, WAV)
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  Max {maxFiles} files • Files will be auto-classified and uploaded to library
+    <div className={cn("w-full", className)}>
+      <div
+        {...getRootProps()}
+        className={cn(
+          "border-2 border-dashed rounded-lg p-8 transition-colors flex flex-col items-center justify-center cursor-pointer",
+          isDragActive ? "border-primary/70 bg-primary/5" : "border-border hover:border-primary/40 hover:bg-muted/30",
+          uploading && "opacity-50 pointer-events-none"
+        )}
+      >
+        <input {...getInputProps()} disabled={uploading} />
+        
+        <div className="flex flex-col items-center justify-center gap-4">
+          {isDragActive ? (
+            <>
+              <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+                <UploadCloud className="h-6 w-6 text-primary" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium">Drop files to upload</p>
+                <p className="text-xs text-muted-foreground mt-1">Files will be uploaded immediately</p>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+                <Upload className="h-6 w-6 text-primary" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium">Drag & drop files here</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  or click to browse files
                 </p>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Supports {allowedFileTypes.join(", ")}
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+      
+      {files.length > 0 && (
+        <div className="mt-4">
+          <div className="text-sm font-medium mb-2">Selected Files ({files.length})</div>
+          <div className="space-y-2 max-h-60 overflow-y-auto p-1">
+            {files.map((file, index) => (
+              <div key={index} className="flex items-center justify-between bg-card rounded-md p-2 text-sm border">
+                <div className="flex items-center gap-2 overflow-hidden">
+                  {getFileIcon(file.name)}
+                  <span className="truncate">{file.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {(file.size / 1024).toFixed(0)} KB
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => removeFile(index)}
+                  disabled={uploading}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+          
+          <div className="mt-4">
+            {uploading ? (
+              <div className="space-y-2">
+                <Progress value={progress} className="h-2" />
+                <p className="text-xs text-center text-muted-foreground">
+                  Uploading... {Math.round(progress)}%
+                </p>
+              </div>
+            ) : (
+              <Button onClick={uploadFiles} className="w-full" disabled={files.length === 0}>
+                Upload {files.length} {files.length === 1 ? "file" : "files"}
+              </Button>
             )}
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Uploaded Files List */}
-      {uploadedFiles.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Files Ready for Upload ({uploadedFiles.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2 mb-4">
-              {uploadedFiles.map((file, index) => {
-                const classification = classifyDocument(file.name, file.type);
-                const progressBadge = getProgressBadge(file.name);
-                
-                return (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      {getFileIcon(file.name)}
-                      <div>
-                        <p className="font-medium text-sm">{file.name}</p>
-                        <p className="text-xs text-gray-500">
-                          {(file.size / 1024 / 1024).toFixed(2)} MB
-                        </p>
-                      </div>
-                      <Badge className={getClassificationBadgeColor(file.name, file.type)}>
-                        {classification.toUpperCase()}
-                      </Badge>
-                      {progressBadge}
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeFile(index)}
-                      disabled={isUploading}
-                    >
-                      <XCircle className="h-4 w-4" />
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
-            
-            <Button 
-              onClick={handleUploadFiles}
-              disabled={isUploading}
-              className="w-full"
-            >
-              {isUploading ? (
-                <>
-                  <Loader className="mr-2 h-4 w-4 animate-spin" />
-                  Uploading Files...
-                </>
-              ) : (
-                <>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload & Classify Files
-                </>
-              )}
-            </Button>
-          </CardContent>
-        </Card>
+        </div>
       )}
     </div>
   );
-};
-
-export default AIFileUpload;
+}
