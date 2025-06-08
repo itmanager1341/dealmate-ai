@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -92,7 +91,8 @@ export default function DealWorkspace() {
         // Check for CIM analysis and get documents count
         await Promise.all([
           checkForCIMAnalysis(id),
-          fetchDocumentsCount(id)
+          fetchDocumentsCount(id),
+          fixExistingDocuments(id) // Fix any unclassified documents
         ]);
       } catch (error: any) {
         console.error("Error fetching deal:", error);
@@ -105,6 +105,74 @@ export default function DealWorkspace() {
     
     fetchDeal();
   }, [id, navigate]);
+
+  // Add function to fix existing documents
+  const fixExistingDocuments = async (dealId: string) => {
+    try {
+      console.log('Checking for unclassified documents...');
+      
+      // Get all documents with null classified_as
+      const { data: documents, error: fetchError } = await supabase
+        .from('documents')
+        .select('*')
+        .eq('deal_id', dealId)
+        .is('classified_as', null);
+
+      if (fetchError) {
+        console.error('Error fetching documents:', fetchError);
+        return;
+      }
+
+      if (!documents || documents.length === 0) {
+        console.log('No unclassified documents found');
+        return;
+      }
+
+      console.log(`Found ${documents.length} unclassified documents, fixing...`);
+
+      // Update each document with proper classification
+      for (const doc of documents) {
+        const name = (doc.name || doc.file_name || '').toLowerCase();
+        const type = (doc.file_type || '').toLowerCase();
+        
+        let classification = 'document'; // default
+        
+        // CIM documents
+        if (name.includes('cim') || name.includes('confidential information memorandum')) {
+          classification = 'cim';
+        }
+        // Financial documents  
+        else if (type.includes('xlsx') || type.includes('excel') || type.includes('csv') ||
+                name.includes('financial') || name.includes('model') || name.includes('projection')) {
+          classification = 'financial';
+        }
+        // Audio files
+        else if (type.includes('mp3') || type.includes('audio') || type.includes('wav')) {
+          classification = 'audio';
+        }
+        // Legal documents
+        else if (name.includes('legal') || name.includes('contract') || name.includes('agreement')) {
+          classification = 'legal';
+        }
+        
+        const { error: updateError } = await supabase
+          .from('documents')
+          .update({ classified_as: classification })
+          .eq('id', doc.id);
+
+        if (updateError) {
+          console.error(`Error updating document ${doc.id}:`, updateError);
+        } else {
+          console.log(`Updated document "${doc.name}" classification to: ${classification}`);
+        }
+      }
+
+      console.log('Finished fixing document classifications');
+      toast.success('Document classifications updated');
+    } catch (error) {
+      console.error('Error in fixExistingDocuments:', error);
+    }
+  };
 
   const checkForCIMAnalysis = async (dealId: string) => {
     try {

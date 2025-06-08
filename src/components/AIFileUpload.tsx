@@ -39,6 +39,40 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{[key: string]: number}>({});
 
+  // Auto-classify documents based on filename and type
+  const classifyDocument = (fileName: string, fileType: string): string => {
+    const name = fileName.toLowerCase();
+    const type = fileType.toLowerCase();
+    
+    // CIM documents
+    if (name.includes('cim') || name.includes('confidential information memorandum')) {
+      return 'cim';
+    }
+    
+    // Financial documents
+    if (type.includes('sheet') || type.includes('excel') || type.includes('csv') ||
+        name.includes('financial') || name.includes('model') || name.includes('projection')) {
+      return 'financial';
+    }
+    
+    // Audio files
+    if (type.includes('audio') || type.includes('mp3') || type.includes('wav')) {
+      return 'audio';
+    }
+    
+    // Legal documents
+    if (name.includes('legal') || name.includes('contract') || name.includes('agreement')) {
+      return 'legal';
+    }
+    
+    // Default to document for PDFs and Word docs
+    if (type.includes('pdf') || type.includes('word') || type.includes('docx')) {
+      return 'document';
+    }
+    
+    return 'other';
+  };
+
   // File drop handler
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const newFiles = acceptedFiles.slice(0, maxFiles - uploadedFiles.length);
@@ -101,27 +135,30 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
           // Update progress
           setUploadProgress(prev => ({ ...prev, [file.name]: 50 }));
 
-          // Determine file type
+          // Determine file type and classification
           let fileType: 'pdf' | 'docx' | 'xlsx' | 'mp3' = 'pdf';
           if (fileExt === 'docx') fileType = 'docx';
           if (fileExt === 'xlsx') fileType = 'xlsx';
           if (fileExt === 'mp3') fileType = 'mp3';
 
-          // Save to database immediately (populate both legacy and current columns)
+          // Auto-classify the document
+          const classification = classifyDocument(file.name, file.type);
+          console.log(`Auto-classified ${file.name} as: ${classification}`);
+
+          // Save to database with classification
           const { data: documentData, error: dbError } = await supabase
             .from('documents')
             .insert({
               deal_id: dealId,
-              // Current columns
               name: file.name,
               file_path: fileName,
-              // Legacy columns (for backward compatibility)
               file_name: file.name,
               storage_path: fileName,
               file_type: fileType,
               size: file.size,
               processed: false,
-              uploaded_by: user.id
+              uploaded_by: user.id,
+              classified_as: classification // Auto-classify during upload
             })
             .select()
             .single();
@@ -136,11 +173,12 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
           
           uploadedResults.push({
             file: file.name,
-            document: documentData
+            document: documentData,
+            classification: classification
           });
           
-          console.log(`Successfully uploaded ${file.name}`);
-          toast.success(`Uploaded ${file.name}`);
+          console.log(`Successfully uploaded and classified ${file.name} as ${classification}`);
+          toast.success(`Uploaded ${file.name} (${classification})`);
           
         } catch (error) {
           console.error(`Error uploading ${file.name}:`, error);
@@ -157,7 +195,7 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
       setUploadedFiles([]);
       setUploadProgress({});
       
-      toast.success(`Upload complete! ${uploadedResults.length} of ${uploadedFiles.length} files uploaded successfully.`);
+      toast.success(`Upload complete! ${uploadedResults.length} of ${uploadedFiles.length} files uploaded and classified.`);
       
     } catch (error) {
       console.error('File upload failed:', error);
@@ -183,12 +221,15 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
     }
   };
 
-  // Get processing method badge color
-  const getMethodBadgeColor = (method: string) => {
-    switch (method) {
+  // Get classification badge color
+  const getClassificationBadgeColor = (fileName: string, fileType: string) => {
+    const classification = classifyDocument(fileName, fileType);
+    switch (classification) {
+      case 'cim': return 'bg-purple-100 text-purple-800';
+      case 'financial': return 'bg-green-100 text-green-800';
       case 'audio': return 'bg-blue-100 text-blue-800';
-      case 'excel': return 'bg-green-100 text-green-800';
-      case 'document': return 'bg-purple-100 text-purple-800';
+      case 'legal': return 'bg-yellow-100 text-yellow-800';
+      case 'document': return 'bg-gray-100 text-gray-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -233,7 +274,7 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
                   Supports: Excel, PDF, Word, Audio files (MP3, WAV)
                 </p>
                 <p className="text-xs text-gray-400 mt-1">
-                  Max {maxFiles} files • Files will be uploaded immediately to library
+                  Max {maxFiles} files • Files will be auto-classified and uploaded to library
                 </p>
               </div>
             )}
@@ -250,7 +291,7 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
           <CardContent>
             <div className="space-y-2 mb-4">
               {uploadedFiles.map((file, index) => {
-                const method = getProcessingMethod(file.name);
+                const classification = classifyDocument(file.name, file.type);
                 const progressBadge = getProgressBadge(file.name);
                 
                 return (
@@ -263,11 +304,8 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
                           {(file.size / 1024 / 1024).toFixed(2)} MB
                         </p>
                       </div>
-                      <Badge className={getMethodBadgeColor(method)}>
-                        {method === 'audio' && 'Audio File'}
-                        {method === 'excel' && 'Spreadsheet'}
-                        {method === 'document' && 'Document'}
-                        {method === 'unknown' && 'Unknown Type'}
+                      <Badge className={getClassificationBadgeColor(file.name, file.type)}>
+                        {classification.toUpperCase()}
                       </Badge>
                       {progressBadge}
                     </div>
@@ -297,7 +335,7 @@ const AIFileUpload: React.FC<AIFileUploadProps> = ({
               ) : (
                 <>
                   <Upload className="mr-2 h-4 w-4" />
-                  Upload Files to Library
+                  Upload & Classify Files
                 </>
               )}
             </Button>

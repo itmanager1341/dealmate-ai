@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +13,10 @@ import {
   CheckCircle,
   AlertCircle,
   Clock,
-  FileCheck
+  FileCheck,
+  BarChart3,
+  FileSpreadsheet,
+  Music
 } from "lucide-react";
 import { useCIMProcessingStatus } from '@/hooks/useCIMProcessingStatus';
 import { CIMProcessingProgress } from './CIMProcessingProgress';
@@ -95,7 +97,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
     }
   };
 
-  const handleCIMAnalysis = async (document: Document) => {
+  const handleDocumentAnalysis = async (document: Document) => {
     if (isProcessing) {
       toast.warning('Another analysis is already in progress');
       return;
@@ -117,15 +119,15 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       const result = await processFile(file, dealId);
       
       if (result.success) {
-        toast.success('CIM analysis completed successfully!');
+        toast.success('Document analysis completed successfully!');
         onCIMAnalysisComplete?.(result.data);
         onDocumentUpdate?.();
       } else {
         throw new Error(result.error || 'Analysis failed');
       }
     } catch (error) {
-      console.error('Error processing CIM:', error);
-      toast.error('Failed to process CIM analysis');
+      console.error('Error processing document:', error);
+      toast.error('Failed to process document analysis');
     } finally {
       setProcessingDocId(null);
     }
@@ -144,6 +146,8 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
   const getFileIcon = (fileType: string) => {
     if (fileType?.includes('pdf')) return <FileText className="h-4 w-4" />;
     if (fileType?.includes('image')) return <FileCheck className="h-4 w-4" />;
+    if (fileType?.includes('sheet') || fileType?.includes('excel')) return <FileSpreadsheet className="h-4 w-4" />;
+    if (fileType?.includes('audio') || fileType?.includes('mp3')) return <Music className="h-4 w-4" />;
     return <FileText className="h-4 w-4" />;
   };
 
@@ -154,6 +158,8 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       'cim': 'bg-purple-100 text-purple-800',
       'financial': 'bg-green-100 text-green-800',
       'legal': 'bg-blue-100 text-blue-800',
+      'audio': 'bg-orange-100 text-orange-800',
+      'document': 'bg-gray-100 text-gray-800',
       'other': 'bg-gray-100 text-gray-800'
     };
 
@@ -161,6 +167,102 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       <Badge className={variants[classification] || variants.other}>
         {classification.toUpperCase()}
       </Badge>
+    );
+  };
+
+  const getAnalysisButton = (document: Document) => {
+    const classification = document.classified_as;
+    
+    // Show appropriate analysis button based on classification
+    if (classification === 'cim') {
+      return (
+        <Button
+          onClick={() => handleDocumentAnalysis(document)}
+          disabled={isProcessing || processingDocId === document.id}
+          size="sm"
+          className="bg-purple-600 hover:bg-purple-700"
+        >
+          {processingDocId === document.id ? (
+            <>
+              <Clock className="h-4 w-4 mr-2 animate-spin" />
+              Processing
+            </>
+          ) : (
+            <>
+              <Brain className="h-4 w-4 mr-2" />
+              CIM Analysis
+            </>
+          )}
+        </Button>
+      );
+    }
+    
+    if (classification === 'financial') {
+      return (
+        <Button
+          onClick={() => handleDocumentAnalysis(document)}
+          disabled={isProcessing || processingDocId === document.id}
+          size="sm"
+          className="bg-green-600 hover:bg-green-700"
+        >
+          {processingDocId === document.id ? (
+            <>
+              <Clock className="h-4 w-4 mr-2 animate-spin" />
+              Processing
+            </>
+          ) : (
+            <>
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Financial Analysis
+            </>
+          )}
+        </Button>
+      );
+    }
+    
+    if (classification === 'audio') {
+      return (
+        <Button
+          onClick={() => handleDocumentAnalysis(document)}
+          disabled={isProcessing || processingDocId === document.id}
+          size="sm"
+          className="bg-orange-600 hover:bg-orange-700"
+        >
+          {processingDocId === document.id ? (
+            <>
+              <Clock className="h-4 w-4 mr-2 animate-spin" />
+              Processing
+            </>
+          ) : (
+            <>
+              <Music className="h-4 w-4 mr-2" />
+              Transcription
+            </>
+          )}
+        </Button>
+      );
+    }
+    
+    // Universal analysis button for any document type
+    return (
+      <Button
+        onClick={() => handleDocumentAnalysis(document)}
+        disabled={isProcessing || processingDocId === document.id}
+        size="sm"
+        className="bg-blue-600 hover:bg-blue-700"
+      >
+        {processingDocId === document.id ? (
+          <>
+            <Clock className="h-4 w-4 mr-2 animate-spin" />
+            Processing
+          </>
+        ) : (
+          <>
+            <Brain className="h-4 w-4 mr-2" />
+            AI Analysis
+          </>
+        )}
+      </Button>
     );
   };
 
@@ -240,26 +342,7 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
                   </div>
                   
                   <div className="flex items-center gap-2">
-                    {doc.classified_as === 'cim' && (
-                      <Button
-                        onClick={() => handleCIMAnalysis(doc)}
-                        disabled={isProcessing || processingDocId === doc.id}
-                        size="sm"
-                        className="bg-purple-600 hover:bg-purple-700"
-                      >
-                        {processingDocId === doc.id ? (
-                          <>
-                            <Clock className="h-4 w-4 mr-2 animate-spin" />
-                            Processing
-                          </>
-                        ) : (
-                          <>
-                            <Brain className="h-4 w-4 mr-2" />
-                            CIM Analysis
-                          </>
-                        )}
-                      </Button>
-                    )}
+                    {getAnalysisButton(doc)}
                     
                     <Button
                       onClick={() => handleDelete(doc.id)}
