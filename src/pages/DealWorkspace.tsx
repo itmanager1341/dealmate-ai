@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +16,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import DocumentLibrary from "@/components/DocumentLibrary";
+import { DocumentLibrary } from "@/components/DocumentLibrary";
 import { DynamicCIMAnalysisDisplay } from "@/components/DynamicCIMAnalysisDisplay";
 import AIFileUpload from "@/components/AIFileUpload";
 
@@ -173,7 +172,7 @@ export default function DealWorkspace() {
           </TabsContent>
 
           <TabsContent value="upload">
-            <AIFileUpload dealId={deal.id} />
+            <AIFileUpload dealId={deal.id} bucketName="documents" />
           </TabsContent>
         </Tabs>
       </div>
