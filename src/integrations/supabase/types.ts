@@ -19,6 +19,7 @@ export type Database = {
           error_message: string | null
           id: string
           input_payload: Json | null
+          log_type: string | null
           output_payload: Json | null
           status: string | null
           user_id: string | null
@@ -32,6 +33,7 @@ export type Database = {
           error_message?: string | null
           id?: string
           input_payload?: Json | null
+          log_type?: string | null
           output_payload?: Json | null
           status?: string | null
           user_id?: string | null
@@ -45,6 +47,7 @@ export type Database = {
           error_message?: string | null
           id?: string
           input_payload?: Json | null
+          log_type?: string | null
           output_payload?: Json | null
           status?: string | null
           user_id?: string | null
