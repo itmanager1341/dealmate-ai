@@ -779,6 +779,45 @@ export type Database = {
           },
         ]
       }
+      field_metadata: {
+        Row: {
+          category: string
+          confidence_score: number
+          created_at: string
+          display_format: string | null
+          display_label: string
+          field_pattern: string
+          icon_name: string | null
+          id: string
+          updated_at: string
+          user_annotations: Json | null
+        }
+        Insert: {
+          category: string
+          confidence_score?: number
+          created_at?: string
+          display_format?: string | null
+          display_label: string
+          field_pattern: string
+          icon_name?: string | null
+          id?: string
+          updated_at?: string
+          user_annotations?: Json | null
+        }
+        Update: {
+          category?: string
+          confidence_score?: number
+          created_at?: string
+          display_format?: string | null
+          display_label?: string
+          field_pattern?: string
+          icon_name?: string | null
+          id?: string
+          updated_at?: string
+          user_annotations?: Json | null
+        }
+        Relationships: []
+      }
       model_configurations: {
         Row: {
           created_at: string | null
