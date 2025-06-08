@@ -3,7 +3,23 @@
 import { supabase } from '@/lib/supabase';
 import type { ModelConfiguration, ModelUsageLog, AIModel, ModelUseCase, ModelUsageStats } from '@/types/models';
 
-const AI_SERVER_URL = 'https://qe299yt8ai34vd-8000.proxy.runpod.net';
+const DEFAULT_AI_SERVER_URL = 'https://qe299yt8ai34vd-8000.proxy.runpod.net';
+
+// Function to get current AI server URL from localStorage or default
+export function getAIServerURL(): string {
+  const storedUrl = localStorage.getItem('ai_server_url');
+  return storedUrl || DEFAULT_AI_SERVER_URL;
+}
+
+// Function to update AI server URL in localStorage
+export function setAIServerURL(url: string): void {
+  localStorage.setItem('ai_server_url', url);
+}
+
+// Function to reset to default URL
+export function resetAIServerURL(): void {
+  localStorage.removeItem('ai_server_url');
+}
 
 export interface AIResponse {
   success: boolean;
@@ -312,6 +328,7 @@ export const modelApi = {
   // Add health check for AI server
   checkServerHealth: async (): Promise<boolean> => {
     try {
+      const AI_SERVER_URL = getAIServerURL();
       console.log('Checking AI server health at:', AI_SERVER_URL);
       
       const response = await fetch(`${AI_SERVER_URL}/health`, {
@@ -963,6 +980,7 @@ export async function processCIM(file: File, dealId: string, documentId?: string
       formData.append('provider', selectedModelInfo.model.provider);
     }
 
+    const AI_SERVER_URL = getAIServerURL();
     console.log('Sending authenticated CIM processing request to AI server...');
     const response = await fetch(`${AI_SERVER_URL}/process-cim`, {
       method: 'POST',
@@ -1101,6 +1119,7 @@ export async function transcribeAudio(file: File, dealId: string, documentId?: s
     formData.append('deal_id', dealId);
     formData.append('user_id', userId);
 
+    const AI_SERVER_URL = getAIServerURL();
     const response = await fetch(`${AI_SERVER_URL}/transcribe`, {
       method: 'POST',
       headers: authHeaders, // Only Authorization header
@@ -1153,6 +1172,7 @@ export async function processExcel(file: File, dealId: string, documentId?: stri
     formData.append('deal_id', dealId);
     formData.append('user_id', userId);
 
+    const AI_SERVER_URL = getAIServerURL();
     const response = await fetch(`${AI_SERVER_URL}/process-excel`, {
       method: 'POST',
       headers: authHeaders, // Only Authorization header
@@ -1205,6 +1225,7 @@ export async function processDocument(file: File, dealId: string, documentId?: s
     formData.append('deal_id', dealId);
     formData.append('user_id', userId);
 
+    const AI_SERVER_URL = getAIServerURL();
     const response = await fetch(`${AI_SERVER_URL}/process-document`, {
       method: 'POST',
       headers: authHeaders, // Only Authorization header
@@ -1252,6 +1273,7 @@ export async function generateMemo(dealId: string, requestedSections?: string[])
       };
     }
     
+    const AI_SERVER_URL = getAIServerURL();
     const response = await fetch(`${AI_SERVER_URL}/generate-memo`, {
       method: 'POST',
       headers: authHeaders, // Includes both Authorization and Content-Type
@@ -1329,6 +1351,7 @@ export async function processFile(file: File, dealId: string, documentId?: strin
 // Processing status checker (for long-running operations)
 export async function checkProcessingStatus(jobId: string): Promise<AIResponse> {
   try {
+    const AI_SERVER_URL = getAIServerURL();
     const response = await fetch(`${AI_SERVER_URL}/status/${jobId}`, {
       method: 'GET',
       headers: {

@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,7 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { Eye, EyeOff, Key, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
+import { Eye, EyeOff, Key, CheckCircle, XCircle, RefreshCw, Server, Globe } from 'lucide-react';
+import { getAIServerURL, setAIServerURL, resetAIServerURL, modelApi } from '@/utils/aiApi';
 
 interface APIKey {
   name: string;
@@ -44,8 +44,14 @@ export function APIKeyManagement() {
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
 
+  // AI Server URL management state
+  const [serverUrl, setServerUrl] = useState(getAIServerURL());
+  const [serverStatus, setServerStatus] = useState<'unknown' | 'online' | 'offline' | 'testing'>('unknown');
+  const [serverLoading, setServerLoading] = useState(false);
+
   useEffect(() => {
     checkConfiguredKeys();
+    checkServerStatus();
   }, []);
 
   const checkConfiguredKeys = async () => {
@@ -64,6 +70,85 @@ export function APIKeyManagement() {
     } catch (error) {
       console.error('Error checking API keys:', error);
     }
+  };
+
+  const checkServerStatus = async () => {
+    setServerStatus('testing');
+    try {
+      const isHealthy = await modelApi.checkServerHealth();
+      setServerStatus(isHealthy ? 'online' : 'offline');
+    } catch (error) {
+      console.error('Error checking server status:', error);
+      setServerStatus('offline');
+    }
+  };
+
+  const handleServerUrlUpdate = (value: string) => {
+    setServerUrl(value);
+  };
+
+  const saveServerUrl = async () => {
+    if (!serverUrl.trim()) {
+      toast.error('Please enter a valid server URL');
+      return;
+    }
+
+    // Basic URL validation
+    try {
+      new URL(serverUrl);
+    } catch {
+      toast.error('Please enter a valid URL format');
+      return;
+    }
+
+    setServerLoading(true);
+    try {
+      setAIServerURL(serverUrl.trim());
+      toast.success('AI server URL saved successfully');
+      await checkServerStatus();
+    } catch (error) {
+      console.error('Error saving server URL:', error);
+      toast.error('Failed to save server URL');
+    } finally {
+      setServerLoading(false);
+    }
+  };
+
+  const testServerConnection = async () => {
+    if (!serverUrl.trim()) {
+      toast.error('Please enter a server URL first');
+      return;
+    }
+
+    setServerLoading(true);
+    try {
+      // Temporarily set the URL for testing without saving
+      const originalUrl = getAIServerURL();
+      setAIServerURL(serverUrl.trim());
+      
+      const isHealthy = await modelApi.checkServerHealth();
+      
+      // Restore original URL if test failed
+      if (!isHealthy) {
+        setAIServerURL(originalUrl);
+      }
+      
+      setServerStatus(isHealthy ? 'online' : 'offline');
+      toast.success(isHealthy ? 'Server connection successful!' : 'Server connection failed');
+    } catch (error) {
+      console.error('Error testing server connection:', error);
+      toast.error('Failed to test server connection');
+      setServerStatus('offline');
+    } finally {
+      setServerLoading(false);
+    }
+  };
+
+  const resetToDefaultUrl = () => {
+    resetAIServerURL();
+    setServerUrl(getAIServerURL());
+    setServerStatus('unknown');
+    toast.success('Reset to default server URL');
   };
 
   const handleKeyUpdate = (keyName: string, value: string) => {
@@ -158,6 +243,81 @@ export function APIKeyManagement() {
         </AlertDescription>
       </Alert>
 
+      {/* AI Server Configuration Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Server className="h-5 w-5" />
+            AI Server Configuration
+            <Badge variant="outline" className="flex items-center gap-1">
+              {serverStatus === 'online' ? (
+                <CheckCircle className="h-3 w-3 text-green-600" />
+              ) : serverStatus === 'offline' ? (
+                <XCircle className="h-3 w-3 text-red-600" />
+              ) : serverStatus === 'testing' ? (
+                <RefreshCw className="h-3 w-3 animate-spin" />
+              ) : (
+                <Globe className="h-3 w-3" />
+              )}
+              {serverStatus === 'testing' ? 'Testing...' : 
+               serverStatus === 'online' ? 'Online' : 
+               serverStatus === 'offline' ? 'Offline' : 'Unknown'}
+            </Badge>
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Configure the AI server URL for document processing and analysis. Update this when your RunPod server restarts.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <Label htmlFor="server-url">AI Server URL</Label>
+              <Input
+                id="server-url"
+                type="url"
+                placeholder="https://your-server-url-8000.proxy.runpod.net"
+                value={serverUrl}
+                onChange={(e) => handleServerUrlUpdate(e.target.value)}
+              />
+            </div>
+            <div className="pt-6 flex gap-2">
+              <Button
+                variant="outline"
+                onClick={testServerConnection}
+                disabled={serverLoading || !serverUrl.trim()}
+              >
+                {serverLoading ? (
+                  <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                ) : null}
+                Test
+              </Button>
+              <Button
+                onClick={saveServerUrl}
+                disabled={serverLoading || !serverUrl.trim()}
+              >
+                {serverLoading ? (
+                  <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                ) : null}
+                Save
+              </Button>
+            </div>
+          </div>
+          <div className="flex justify-between items-center">
+            <p className="text-xs text-muted-foreground">
+              Current URL: {getAIServerURL()}
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={resetToDefaultUrl}
+            >
+              Reset to Default
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Existing API Keys Section */}
       <div className="grid gap-6">
         {apiKeys.map((apiKey) => {
           const currentKey = apiKey.key;
