@@ -48,11 +48,13 @@ export function DynamicCIMAnalysisDisplay({ dealId }: DynamicCIMAnalysisDisplayP
   const [unknownFields, setUnknownFields] = useState<string[]>([]);
 
   useEffect(() => {
+    console.log('DynamicCIMAnalysisDisplay mounted with dealId:', dealId);
     fetchCIMAnalysis();
   }, [dealId]);
 
   const fetchCIMAnalysis = async () => {
     try {
+      console.log('Fetching CIM analysis for deal:', dealId);
       const { data, error } = await supabase
         .from('cim_analysis')
         .select('*')
@@ -60,7 +62,12 @@ export function DynamicCIMAnalysisDisplay({ dealId }: DynamicCIMAnalysisDisplayP
         .order('created_at', { ascending: false })
         .limit(1);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+      
+      console.log('CIM analysis data received:', data);
       
       if (data && data.length > 0) {
         const analysisData = data[0];
@@ -82,6 +89,8 @@ export function DynamicCIMAnalysisDisplay({ dealId }: DynamicCIMAnalysisDisplayP
         if (unknown.length > 0) {
           console.log('Unknown fields detected:', unknown);
         }
+      } else {
+        console.log('No CIM analysis data found for deal:', dealId);
       }
     } catch (error) {
       console.error("Error fetching CIM analysis:", error);
