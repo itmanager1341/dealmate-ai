@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { useCIMProcessingStatus } from '@/hooks/useCIMProcessingStatus';
 import { CIMProcessingProgress } from './CIMProcessingProgress';
-import { processFile, validateServerURL } from '@/utils/aiApi';
+import { processCIM, processExcel, transcribeAudio, processDocument, validateServerURL } from '@/utils/aiApi';
 import { Document } from '@/types';
 
 interface DocumentLibraryProps {
@@ -70,8 +70,35 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
     fetchDocuments();
   }, [dealId]);
 
+  const cleanupRelatedRecords = async (documentId: string) => {
+    try {
+      // Clean up orphaned processing jobs first
+      await supabase
+        .from('processing_jobs')
+        .delete()
+        .eq('document_id', documentId);
+
+      // Clean up other related records that might not have CASCADE
+      const tables = ['ai_outputs', 'agent_logs', 'document_chunks', 'transcripts', 'xlsx_chunks', 'cim_analysis'];
+      
+      for (const table of tables) {
+        await supabase
+          .from(table)
+          .delete()
+          .eq('document_id', documentId);
+      }
+    } catch (error) {
+      console.error(`Error cleaning up related records:`, error);
+      // Continue with deletion attempt even if cleanup fails
+    }
+  };
+
   const handleDelete = async (documentId: string) => {
     try {
+      // First clean up related records
+      await cleanupRelatedRecords(documentId);
+
+      // Now delete the document
       const { error } = await supabase
         .from('documents')
         .delete()
@@ -84,7 +111,23 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
       onDocumentUpdate?.();
     } catch (error) {
       console.error('Error deleting document:', error);
-      toast.error('Failed to delete document');
+      toast.error('Failed to delete document. There may be related records preventing deletion.');
+    }
+  };
+
+  const getCorrectProcessingFunction = (document: Document) => {
+    const classification = document.classified_as;
+    
+    // Route to specific processing functions based on classification
+    switch (classification) {
+      case 'cim':
+        return processCIM;
+      case 'financial':
+        return processExcel;
+      case 'audio':
+        return transcribeAudio;
+      default:
+        return processDocument;
     }
   };
 
@@ -127,17 +170,23 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
         type: document.file_type 
       });
       
-      console.log(`Starting analysis for document: ${document.file_name || document.name}`);
+      console.log(`Starting analysis for document: ${document.file_name || document.name} (${document.classified_as})`);
       
-      // Use the original processFile function which handles everything
-      const result = await processFile(file, dealId, document.id);
+      // Get the correct processing function based on document classification
+      const processingFunction = getCorrectProcessingFunction(document);
+      const functionName = processingFunction.name;
+      
+      console.log(`Using processing function: ${functionName} for classification: ${document.classified_as}`);
+      
+      // Call the appropriate processing function
+      const result = await processingFunction(file, dealId, document.id);
       
       console.log('Processing result:', result);
       
-      // Simple success check - trust the processFile result
+      // Simple success check - trust the processing function result
       if (result.success) {
         console.log('Document analysis completed successfully');
-        toast.success('Document analysis completed successfully!');
+        toast.success(`${document.classified_as?.toUpperCase() || 'Document'} analysis completed successfully!`);
         onCIMAnalysisComplete?.(result.data);
         onDocumentUpdate?.();
       } else {
