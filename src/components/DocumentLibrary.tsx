@@ -165,12 +165,25 @@ export function DocumentLibrary({ dealId, onDocumentUpdate, onCIMAnalysisComplet
         throw new Error('Failed to download file for analysis');
       }
       
-      // Create a File object from the downloaded data
+      // Create a File object from the downloaded data with correct MIME type
+      let fileType = document.file_type;
+      
+      // Fix common MIME type issues for PDFs
+      if (!fileType || fileType === 'application/octet-stream') {
+        const fileName = document.file_name || document.name;
+        const extension = fileName.toLowerCase().split('.').pop();
+        if (extension === 'pdf') {
+          fileType = 'application/pdf';
+          console.log(`Fixed MIME type for PDF file: ${fileName}`);
+        }
+      }
+      
       const file = new File([fileData], document.file_name || document.name, { 
-        type: document.file_type 
+        type: fileType 
       });
       
       console.log(`Starting analysis for document: ${document.file_name || document.name} (${document.classified_as})`);
+      console.log(`File details: size=${file.size}, type="${file.type}"`);
       
       // Get the correct processing function based on document classification
       const processingFunction = getCorrectProcessingFunction(document);

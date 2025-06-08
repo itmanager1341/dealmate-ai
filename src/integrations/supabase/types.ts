@@ -394,6 +394,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "cim_analysis_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "fk_cim_analysis_deal_id"
             columns: ["deal_id"]
             isOneToOne: false
@@ -594,7 +601,15 @@ export type Database = {
           start_page?: number | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "document_chunks_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       document_quotes: {
         Row: {
@@ -920,7 +935,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "processing_jobs_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       quote_relationships: {
         Row: {

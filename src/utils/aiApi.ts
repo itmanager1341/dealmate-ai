@@ -414,15 +414,29 @@ async function getAuthHeaders(includeContentType: boolean = true): Promise<{ hea
 
 // Enhanced CIM file validation with comprehensive checks
 export function validateCIMFile(file: File): { isValid: boolean; message: string; confidence?: number } {
-  console.log(`Validating CIM file: ${file.name} (${file.size} bytes, ${file.type})`);
+  console.log(`Validating CIM file: ${file.name} (${file.size} bytes, type: "${file.type}")`);
   
-  // Check file type
-  if (file.type !== 'application/pdf') {
+  // Get file extension for fallback validation
+  const fileName = file.name.toLowerCase();
+  const fileExtension = fileName.split('.').pop();
+  
+  // Check file type - be flexible with PDF detection
+  const isPdfByType = file.type === 'application/pdf';
+  const isPdfByExtension = fileExtension === 'pdf';
+  
+  console.log(`PDF validation: byType=${isPdfByType}, byExtension=${isPdfByExtension}`);
+  
+  if (!isPdfByType && !isPdfByExtension) {
     return {
       isValid: false,
       message: 'Only PDF files are supported for CIM analysis',
       confidence: 0
     };
+  }
+
+  // Warn if file type is missing but extension is correct
+  if (!isPdfByType && isPdfByExtension) {
+    console.warn(`File type is "${file.type}" but extension is PDF - proceeding with validation`);
   }
 
   // Check file size (limit: 50MB, minimum: 1MB for meaningful CIMs)
@@ -446,7 +460,6 @@ export function validateCIMFile(file: File): { isValid: boolean; message: string
   }
 
   // Enhanced CIM keyword detection with confidence scoring
-  const fileName = file.name.toLowerCase();
   const strongCimKeywords = ['cim', 'confidential information memorandum', 'investment memorandum'];
   const mediumCimKeywords = ['memorandum', 'investment', 'offering', 'confidential'];
   const weakCimKeywords = ['business', 'company', 'acquisition', 'private'];
