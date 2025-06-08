@@ -3,6 +3,7 @@ import React from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { 
   Brain, 
@@ -13,7 +14,9 @@ import {
   Loader2,
   DollarSign,
   RefreshCw,
-  Info
+  Info,
+  StopCircle,
+  X
 } from "lucide-react";
 import { useCIMModelTracking } from '@/hooks/useCIMModelTracking';
 import { useCIMErrorRecovery } from '@/hooks/useCIMErrorRecovery';
@@ -27,6 +30,7 @@ interface CIMProcessingProgressProps {
   dealId: string;
   documentId?: string;
   onRetry?: () => void;
+  onStop?: () => void;
 }
 
 export function CIMProcessingProgress({ 
@@ -37,7 +41,8 @@ export function CIMProcessingProgress({
   error,
   dealId,
   documentId,
-  onRetry
+  onRetry,
+  onStop
 }: CIMProcessingProgressProps) {
   const { trackingState, getTotalCost } = useCIMModelTracking(dealId, documentId);
   const { recoveryState, getLastError } = useCIMErrorRecovery();
@@ -79,7 +84,7 @@ export function CIMProcessingProgress({
   const lastError = getLastError();
   const totalCost = getTotalCost();
 
-  if (!isProcessing && !error) return null;
+  if (!isProcessing && !error && currentStep !== 'stopped') return null;
 
   return (
     <Card className="border-purple-200 bg-gradient-to-r from-purple-50 to-pink-50">
@@ -88,7 +93,9 @@ export function CIMProcessingProgress({
           {/* Header with Enhanced Cost & Model Info */}
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-semibold text-purple-900">Processing CIM Analysis</h3>
+              <h3 className="font-semibold text-purple-900">
+                {currentStep === 'stopped' ? 'Processing Stopped' : 'Processing CIM Analysis'}
+              </h3>
               <p className="text-sm text-purple-700">{fileName}</p>
             </div>
             <div className="flex items-center gap-2">
@@ -136,9 +143,40 @@ export function CIMProcessingProgress({
                 </TooltipProvider>
               )}
 
+              {/* Stop Button */}
+              {isProcessing && onStop && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        variant="destructive" 
+                        size="sm"
+                        onClick={onStop}
+                        className="bg-red-100 hover:bg-red-200 text-red-700 border-red-200"
+                      >
+                        <StopCircle className="h-4 w-4 mr-1" />
+                        Stop
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      <div className="text-xs">
+                        Stop the current processing job
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+
               {/* Processing Status */}
-              <Badge variant={error ? "destructive" : "secondary"} className="bg-purple-100 text-purple-800">
-                {error ? "Failed" : isProcessing ? "Processing" : "Complete"}
+              <Badge variant={error ? "destructive" : currentStep === 'stopped' ? "secondary" : "secondary"} 
+                     className={
+                       error ? "bg-red-100 text-red-800" :
+                       currentStep === 'stopped' ? "bg-gray-100 text-gray-800" :
+                       "bg-purple-100 text-purple-800"
+                     }>
+                {error ? "Failed" : 
+                 currentStep === 'stopped' ? "Stopped" :
+                 isProcessing ? "Processing" : "Complete"}
               </Badge>
             </div>
           </div>
@@ -147,7 +185,9 @@ export function CIMProcessingProgress({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-purple-700">
-                {error ? "Processing Failed" : currentStep === 'complete' ? "Analysis Complete" : currentStep}
+                {error ? "Processing Failed" : 
+                 currentStep === 'stopped' ? "Processing Stopped" :
+                 currentStep === 'complete' ? "Analysis Complete" : currentStep}
               </span>
               <span className="text-sm text-purple-600">{Math.round(progress)}%</span>
             </div>
@@ -185,6 +225,19 @@ export function CIMProcessingProgress({
               );
             })}
           </div>
+
+          {/* Stopped Message */}
+          {currentStep === 'stopped' && (
+            <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+              <div className="flex items-center gap-2">
+                <X className="h-4 w-4 text-gray-500" />
+                <span className="text-sm font-medium text-gray-800">Processing Stopped</span>
+              </div>
+              <p className="text-sm text-gray-700 mt-1">
+                The CIM analysis was stopped by user request. You can start a new analysis when ready.
+              </p>
+            </div>
+          )}
 
           {/* Enhanced Error Handling with Smart Recovery */}
           {error && (

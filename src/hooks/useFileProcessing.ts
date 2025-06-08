@@ -1,10 +1,11 @@
 import { useState, useCallback } from 'react';
 import { processFile, generateMemo, checkAIServerHealth, AIResponse } from '../utils/aiApi';
+import { stopAllProcessingJobsForDeal } from '../utils/processingJobsApi';
 
 export interface ProcessingJob {
   id: string;
   fileName: string;
-  status: 'pending' | 'processing' | 'completed' | 'error';
+  status: 'pending' | 'processing' | 'completed' | 'error' | 'cancelled';
   result?: any;
   error?: string;
   startTime: Date;
@@ -21,6 +22,34 @@ export function useFileProcessing() {
     setIsServerHealthy(healthy);
     console.log('AI server health check result:', healthy);
     return healthy;
+  }, []);
+
+  // Stop all processing for a deal
+  const stopProcessingForDeal = useCallback(async (dealId: string): Promise<boolean> => {
+    try {
+      console.log(`Stopping all processing jobs for deal: ${dealId}`);
+      
+      // Stop jobs in the database
+      await stopAllProcessingJobsForDeal(dealId, 'cim_analysis');
+      
+      // Update local job states
+      setJobs(prev => prev.map(job => 
+        job.id.startsWith(dealId) && (job.status === 'pending' || job.status === 'processing')
+          ? { 
+              ...job, 
+              status: 'cancelled' as const,
+              error: 'Stopped by user',
+              endTime: new Date()
+            }
+          : job
+      ));
+      
+      console.log('Successfully stopped all processing jobs for deal');
+      return true;
+    } catch (error) {
+      console.error('Error stopping processing for deal:', error);
+      return false;
+    }
   }, []);
 
   // Process a single file
@@ -128,12 +157,14 @@ export function useFileProcessing() {
     const completed = jobs.filter(job => job.status === 'completed').length;
     const processing = jobs.filter(job => job.status === 'processing').length;
     const errors = jobs.filter(job => job.status === 'error').length;
+    const cancelled = jobs.filter(job => job.status === 'cancelled').length;
     
     return {
       total,
       completed,
       processing,
       errors,
+      cancelled,
       successRate: total > 0 ? (completed / total) * 100 : 0
     };
   }, [jobs]);
@@ -158,6 +189,7 @@ export function useFileProcessing() {
     processFileAsync,
     processFiles,
     generateDealMemo,
+    stopProcessingForDeal,
     
     // Utilities
     getJobsForDeal,

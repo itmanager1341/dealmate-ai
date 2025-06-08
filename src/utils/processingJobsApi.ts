@@ -1,4 +1,3 @@
-
 import { supabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/supabase';
 
@@ -72,6 +71,67 @@ export const updateProcessingJob = async (params: UpdateProcessingJobParams) => 
     return data;
   } catch (error) {
     console.error('Error updating processing job:', error);
+    throw error;
+  }
+};
+
+export const stopProcessingJob = async (jobId: string) => {
+  try {
+    console.log(`Stopping processing job ${jobId}`);
+    
+    const { data, error } = await supabase
+      .from('processing_jobs')
+      .update({
+        status: 'cancelled',
+        progress: 0,
+        current_step: 'stopped',
+        completed_at: new Date().toISOString(),
+        error_message: 'Processing stopped by user'
+      })
+      .eq('id', jobId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error stopping processing job:', error);
+      throw error;
+    }
+
+    console.log('Successfully stopped processing job:', data);
+    return data;
+  } catch (error) {
+    console.error('Error in stopProcessingJob:', error);
+    throw error;
+  }
+};
+
+export const stopAllProcessingJobsForDeal = async (dealId: string, jobType: string = 'cim_analysis') => {
+  try {
+    console.log(`Stopping all ${jobType} processing jobs for deal ${dealId}`);
+    
+    const { data, error } = await supabase
+      .from('processing_jobs')
+      .update({
+        status: 'cancelled',
+        progress: 0,
+        current_step: 'stopped',
+        completed_at: new Date().toISOString(),
+        error_message: 'Processing stopped by user'
+      })
+      .eq('deal_id', dealId)
+      .eq('job_type', jobType)
+      .in('status', ['pending', 'processing'])
+      .select();
+
+    if (error) {
+      console.error('Error stopping processing jobs:', error);
+      throw error;
+    }
+
+    console.log('Successfully stopped processing jobs:', data);
+    return data;
+  } catch (error) {
+    console.error('Error in stopAllProcessingJobsForDeal:', error);
     throw error;
   }
 };

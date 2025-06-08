@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { completeStuckProcessingJobs, forceCompleteProcessingJob } from '@/utils/processingJobsApi';
+import { completeStuckProcessingJobs, forceCompleteProcessingJob, stopProcessingJob, stopAllProcessingJobsForDeal } from '@/utils/processingJobsApi';
 import { useCIMModelTracking } from './useCIMModelTracking';
 import { useCIMErrorRecovery } from './useCIMErrorRecovery';
 
@@ -182,6 +182,43 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
     });
   }, [resetTracking, resetErrorState]);
 
+  const stopProcessing = useCallback(async () => {
+    if (!status.jobId) {
+      console.warn('No active job to stop');
+      return false;
+    }
+
+    try {
+      console.log(`Stopping processing job ${status.jobId}`);
+      
+      // Stop the specific job
+      await stopProcessingJob(status.jobId);
+      
+      // Also stop any other jobs for this deal as a safety measure
+      await stopAllProcessingJobsForDeal(dealId, 'cim_analysis');
+      
+      // Reset the UI state immediately
+      setStatus({
+        isProcessing: false,
+        progress: 0,
+        currentStep: 'stopped',
+        agentResults: {},
+        error: null,
+        jobId: null,
+        documentId: null
+      });
+      
+      resetTracking();
+      resetErrorState();
+      
+      console.log('Successfully stopped processing');
+      return true;
+    } catch (error) {
+      console.error('Error stopping processing:', error);
+      return false;
+    }
+  }, [status.jobId, dealId, resetTracking, resetErrorState]);
+
   const updateProgress = useCallback((progress: number, step: string, agentResults?: any) => {
     console.log(`Updating progress: ${progress}% - ${step}`);
     setStatus(prev => ({
@@ -343,6 +380,7 @@ export function useCIMProcessingStatus(dealId: string, documentId?: string) {
     setError,
     reset,
     checkForCompletion,
-    retryProcessing
+    retryProcessing,
+    stopProcessing
   };
 }
