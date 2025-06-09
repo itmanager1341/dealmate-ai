@@ -19,6 +19,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { DocumentLibrary } from "@/components/DocumentLibrary";
 import { DynamicCIMAnalysisDisplay } from "@/components/DynamicCIMAnalysisDisplay";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import AIFileUpload from "@/components/AIFileUpload";
 
 interface Deal {
@@ -165,15 +166,21 @@ export default function DealWorkspace() {
           </TabsList>
 
           <TabsContent value="analysis">
-            <DynamicCIMAnalysisDisplay dealId={deal.id} />
+            <ErrorBoundary>
+              <DynamicCIMAnalysisDisplay dealId={deal.id} />
+            </ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="documents">
-            <DocumentLibrary dealId={deal.id} />
+            <ErrorBoundary>
+              <DocumentLibrary dealId={deal.id} />
+            </ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="upload">
-            <AIFileUpload dealId={deal.id} bucketName="documents" />
+            <ErrorBoundary>
+              <AIFileUpload dealId={deal.id} bucketName="documents" />
+            </ErrorBoundary>
           </TabsContent>
         </Tabs>
       </div>
