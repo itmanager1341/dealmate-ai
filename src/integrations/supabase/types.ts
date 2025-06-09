@@ -19,6 +19,7 @@ export type Database = {
           error_message: string | null
           id: string
           input_payload: Json | null
+          log_type: string | null
           output_payload: Json | null
           status: string | null
           user_id: string | null
@@ -32,6 +33,7 @@ export type Database = {
           error_message?: string | null
           id?: string
           input_payload?: Json | null
+          log_type?: string | null
           output_payload?: Json | null
           status?: string | null
           user_id?: string | null
@@ -45,6 +47,7 @@ export type Database = {
           error_message?: string | null
           id?: string
           input_payload?: Json | null
+          log_type?: string | null
           output_payload?: Json | null
           status?: string | null
           user_id?: string | null
@@ -775,6 +778,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      field_metadata: {
+        Row: {
+          category: string
+          confidence_score: number
+          created_at: string
+          display_format: string | null
+          display_label: string
+          field_pattern: string
+          icon_name: string | null
+          id: string
+          updated_at: string
+          user_annotations: Json | null
+        }
+        Insert: {
+          category: string
+          confidence_score?: number
+          created_at?: string
+          display_format?: string | null
+          display_label: string
+          field_pattern: string
+          icon_name?: string | null
+          id?: string
+          updated_at?: string
+          user_annotations?: Json | null
+        }
+        Update: {
+          category?: string
+          confidence_score?: number
+          created_at?: string
+          display_format?: string | null
+          display_label?: string
+          field_pattern?: string
+          icon_name?: string | null
+          id?: string
+          updated_at?: string
+          user_annotations?: Json | null
+        }
+        Relationships: []
       }
       model_configurations: {
         Row: {
