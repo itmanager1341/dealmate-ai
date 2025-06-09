@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -51,9 +50,27 @@ export function APIKeyManagement() {
   const [serverLoading, setServerLoading] = useState(false);
 
   useEffect(() => {
-    // Skip the problematic API key check for now
+    checkConfiguredKeys();
     checkServerStatus();
   }, []);
+
+  const checkConfiguredKeys = async () => {
+    try {
+      // Check which keys are configured in Supabase Edge Function secrets
+      const response = await supabase.functions.invoke('check-api-keys');
+      
+      if (response.data) {
+        setApiKeys(prev => prev.map(key => ({
+          ...key,
+          isConfigured: response.data.configured?.includes(key.name) || false,
+          isValid: response.data.valid?.[key.name],
+          lastTested: response.data.lastTested?.[key.name]
+        })));
+      }
+    } catch (error) {
+      console.error('Error checking API keys:', error);
+    }
+  };
 
   const checkServerStatus = async () => {
     const urlValidation = validateServerURL();
@@ -196,13 +213,23 @@ export function APIKeyManagement() {
     setLoading(prev => ({ ...prev, [keyName]: true }));
 
     try {
-      // For now, just simulate saving without the edge function
-      // TODO: Implement proper key saving when edge function is available
-      toast.success(`${keyName} saved successfully (simulated)`);
+      const response = await supabase.functions.invoke('save-api-key', {
+        body: {
+          keyName,
+          keyValue: apiKey.key.trim()
+        }
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      toast.success(`${keyName} saved successfully`);
+      await checkConfiguredKeys();
       
-      // Update local state to show as configured
+      // Clear the input field
       setApiKeys(prev => prev.map(key => 
-        key.name === keyName ? { ...key, isConfigured: true, key: '' } : key
+        key.name === keyName ? { ...key, key: '' } : key
       ));
     } catch (error) {
       console.error('Error saving API key:', error);
@@ -216,14 +243,21 @@ export function APIKeyManagement() {
     setLoading(prev => ({ ...prev, [`test-${keyName}`]: true }));
 
     try {
-      // For now, just simulate testing without the edge function
-      // TODO: Implement proper key testing when edge function is available
-      toast.success(`${keyName} test completed (simulated)`);
+      const response = await supabase.functions.invoke('test-api-key', {
+        body: { keyName }
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const isValid = response.data?.valid;
+      toast.success(isValid ? `${keyName} is valid` : `${keyName} is invalid`);
       
       setApiKeys(prev => prev.map(key => 
         key.name === keyName ? { 
           ...key, 
-          isValid: true,
+          isValid,
           lastTested: new Date().toISOString()
         } : key
       ));
@@ -237,6 +271,12 @@ export function APIKeyManagement() {
 
   const toggleKeyVisibility = (keyName: string) => {
     setShowKeys(prev => ({ ...prev, [keyName]: !prev[keyName] }));
+  };
+
+  const maskKey = (key: string) => {
+    if (!key) return '';
+    if (key.length <= 8) return '••••••••';
+    return `${key.substring(0, 4)}${'•'.repeat(key.length - 8)}${key.substring(key.length - 4)}`;
   };
 
   return (
@@ -321,7 +361,7 @@ export function APIKeyManagement() {
         </CardContent>
       </Card>
 
-      {/* Simplified API Keys Section */}
+      {/* Existing API Keys Section */}
       <div className="grid gap-6">
         {apiKeys.map((apiKey) => {
           const currentKey = apiKey.key;
