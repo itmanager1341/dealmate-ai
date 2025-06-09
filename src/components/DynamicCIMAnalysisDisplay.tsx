@@ -1,10 +1,10 @@
 
-import { ProgressiveCIMAnalysis } from './ProgressiveCIMAnalysis';
+import { CIMAnalysisDisplay } from './CIMAnalysisDisplay';
 
 interface DynamicCIMAnalysisDisplayProps {
   dealId: string;
 }
 
 export function DynamicCIMAnalysisDisplay({ dealId }: DynamicCIMAnalysisDisplayProps) {
-  return <ProgressiveCIMAnalysis dealId={dealId} />;
+  return <CIMAnalysisDisplay dealId={dealId} />;
 }
