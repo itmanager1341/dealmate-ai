@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -149,15 +148,15 @@ export default function DealWorkspace() {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Tabs defaultValue="analysis" className="space-y-6">
+        <Tabs defaultValue="documents" className="space-y-6">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="analysis" className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" />
-              Dynamic Analysis
-            </TabsTrigger>
             <TabsTrigger value="documents" className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
               Documents
+            </TabsTrigger>
+            <TabsTrigger value="analysis" className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Analysis
             </TabsTrigger>
             <TabsTrigger value="upload" className="flex items-center gap-2">
               <Upload className="h-4 w-4" />
@@ -165,15 +164,15 @@ export default function DealWorkspace() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="analysis">
-            <ErrorBoundary>
-              <DynamicCIMAnalysisDisplay dealId={deal.id} />
-            </ErrorBoundary>
-          </TabsContent>
-
           <TabsContent value="documents">
             <ErrorBoundary>
               <DocumentLibrary dealId={deal.id} />
+            </ErrorBoundary>
+          </TabsContent>
+
+          <TabsContent value="analysis">
+            <ErrorBoundary>
+              <DynamicCIMAnalysisDisplay dealId={deal.id} />
             </ErrorBoundary>
           </TabsContent>
 

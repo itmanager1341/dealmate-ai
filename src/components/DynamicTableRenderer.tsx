@@ -11,18 +11,38 @@ export function DynamicTableRenderer({ data, title }: DynamicTableRendererProps)
     return null;
   }
 
-  // Flatten nested objects with dot notation
-  const flattenObject = (obj: any, prefix = ''): Record<string, any> => {
+  // Flatten nested objects with dot notation - with safety guards
+  const flattenObject = (obj: any, prefix = '', depth = 0, visited = new WeakSet()): Record<string, any> => {
     const flattened: Record<string, any> = {};
     
-    for (const [key, value] of Object.entries(obj)) {
-      const newKey = prefix ? `${prefix}.${key}` : key;
-      
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        Object.assign(flattened, flattenObject(value, newKey));
-      } else {
-        flattened[newKey] = value;
+    // Safety guard: prevent infinite recursion with depth limit
+    if (depth > 5) {
+      return { [`${prefix}_max_depth_reached`]: '[Complex Object]' };
+    }
+    
+    // Safety guard: prevent circular references
+    if (visited.has(obj)) {
+      return { [`${prefix}_circular_ref`]: '[Circular Reference]' };
+    }
+    
+    // Mark this object as visited
+    if (typeof obj === 'object' && obj !== null) {
+      visited.add(obj);
+    }
+    
+    try {
+      for (const [key, value] of Object.entries(obj)) {
+        const newKey = prefix ? `${prefix}.${key}` : key;
+        
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          Object.assign(flattened, flattenObject(value, newKey, depth + 1, visited));
+        } else {
+          flattened[newKey] = value;
+        }
       }
+    } catch (error) {
+      console.error('Error flattening object:', error);
+      return { error: 'Failed to process data' };
     }
     
     return flattened;
@@ -44,8 +64,23 @@ export function DynamicTableRenderer({ data, title }: DynamicTableRendererProps)
     return String(value);
   };
 
-  const flatData = flattenObject(data);
-  const entries = Object.entries(flatData);
+  let flatData: Record<string, any>;
+  let entries: [string, any][];
+
+  try {
+    flatData = flattenObject(data);
+    entries = Object.entries(flatData);
+  } catch (error) {
+    console.error('Error processing table data:', error);
+    return (
+      <div className="space-y-2">
+        {title && <h4 className="font-semibold text-lg">{title}</h4>}
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-red-800">Error processing data for display</p>
+        </div>
+      </div>
+    );
+  }
 
   if (entries.length === 0) {
     return null;
